@@ -1,0 +1,1228 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+
+var COLORS = ["#FF3366","#00E5FF","#ADFF2F","#FF9500","#BF5FFF","#FFE600"];
+
+var SKINS = [
+  { id:0, name:"CARRE",   desc:"Style par defaut",    unlockAt:0,  shape:"square"  },
+  { id:1, name:"ROND",    desc:"Cellules rondes",      unlockAt:1,  shape:"circle"  },
+  { id:2, name:"DOUX",    desc:"Angles arrondis",      unlockAt:3,  shape:"soft"    },
+  { id:3, name:"BRIQUE",  desc:"Effet brique",         unlockAt:6,  shape:"brick"   },
+  { id:4, name:"NEON",    desc:"Eclat lumineux",       unlockAt:8,  shape:"neon"    },
+  { id:5, name:"GEMME",   desc:"Formes organiques",    unlockAt:10, shape:"gem"     },
+  { id:6, name:"PIXEL",   desc:"Style retro 8-bit - SECRET", unlockAt:99, shape:"pixel"   },
+];
+
+var LEVELS = [
+  { n:1,  dk:"easy", label:"FACILE",    col:"#ADFF2F", timer:45, size:8  },
+  { n:2,  dk:"n1",   label:"NORMAL",    col:"#00E5FF", timer:35, size:8  },
+  { n:3,  dk:"n2",   label:"NORMAL",    col:"#00E5FF", timer:30, size:12 },
+  { n:4,  dk:"n3",   label:"NORMAL",    col:"#00E5FF", timer:25, size:12 },
+  { n:5,  dk:"n4",   label:"NORMAL",    col:"#00E5FF", timer:22, size:12 },
+  { n:6,  dk:"n5",   label:"NORMAL",    col:"#00E5FF", timer:20, size:12 },
+  { n:7,  dk:"h1",   label:"DIFFICILE", col:"#FF9500", timer:18, size:16 },
+  { n:8,  dk:"h2",   label:"DIFFICILE", col:"#FF9500", timer:15, size:16 },
+  { n:9,  dk:"h3",   label:"DIFFICILE", col:"#FF9500", timer:12, size:16 },
+  { n:10, dk:"xtr",  label:"EXTREME",   col:"#FF3366", timer:10, size:16 },
+];
+
+
+// ── Trophies ──────────────────────────────────────────────────────────────────
+var TROPHIES = [
+  { id:0,  icon:"MAP",   name:"CONQUERANT",     desc:"Terminer toute la campagne",                  color:"#FF9500" },
+  { id:1,  icon:"STAR",  name:"PERFECTIONNISTE", desc:"3 etoiles sur tous les niveaux",             color:"#FFE600" },
+  { id:2,  icon:"CTRL",  name:"EXPLORATEUR",    desc:"Jouer 20 parties en mode libre",              color:"#00E5FF" },
+  { id:3,  icon:"HOME",  name:"RIVALITE",       desc:"Jouer 10 parties en 1v1 local",               color:"#ADFF2F" },
+  { id:4,  icon:"SKULL", name:"INTOUCHABLE",    desc:"5 victoires consecutives en Extreme",         color:"#FF3366" },
+  { id:5,  icon:"SKIN",  name:"COLLECTIONNEUR", desc:"Debloquer tous les skins normaux",            color:"#BF5FFF" },
+  { id:6,  icon:"BOLT",  name:"ECLAIR",         desc:"Gagner une partie en moins de 15 coups",      color:"#FFE600" },
+  { id:7,  icon:"LAND",  name:"DOMINATEUR",     desc:"Finir une partie avec 80%+ du territoire",   color:"#FF9500" },
+  { id:8,  icon:"FIRE",  name:"EN FEU",         desc:"3 victoires consecutives en mode libre",      color:"#FF3366" },
+  { id:9,  icon:"CROWN", name:"ROI LOCAL",      desc:"Gagner un 1v1 avec 80%+ du territoire",      color:"#00E5FF" },
+  { id:10, icon:"FAST",  name:"SPEEDRUN",       desc:"Finir un niveau campagne avec 30s restants", color:"#ADFF2F" },
+  { id:11, icon:"ACE",   name:"AS DES AS",      desc:"Gagner contre le bot en Extreme 10 fois",    color:"#BF5FFF" },
+];
+
+var DEFAULT_STATS={
+  freeGames:0, freeWins:0, freeLosses:0,
+  campaignGames:0, campaignWins:0,
+  localGames:0, localWins:0,
+  extremeWins:0, extremeStreak:0, bestExtremeStreak:0,
+  freeStreak:0, bestFreeStreak:0,
+  totalMoves:0, totalGames:0,
+  bestPct:0, bestMoves:999,
+  trophies:Array(12).fill(false),
+  eclair:false, dominator:false, localDominator:false, speedrun:false,
+};
+
+function checkTrophies(stats, progress){
+  var t = stats.trophies.slice();
+  var allDone = progress.completed.every(function(v){return v;});
+  var allStars = progress.bestScores.every(function(s){return calcStars(s)===3;});
+  var allNormalSkins = progress.completed.filter(Boolean).length >= 10;
+  if(allDone) t[0]=true;
+  if(allStars) t[1]=true;
+  if(stats.freeGames>=20) t[2]=true;
+  if(stats.localGames>=10) t[3]=true;
+  if(stats.extremeStreak>=5) t[4]=true;
+  if(allNormalSkins) t[5]=true;
+  if(stats.eclair) t[6]=true;
+  if(stats.dominator) t[7]=true;
+  if(stats.freeStreak>=3) t[8]=true;
+  if(stats.localDominator) t[9]=true;
+  if(stats.speedrun) t[10]=true;
+  if(stats.extremeWins>=10) t[11]=true;
+  return t;
+}
+
+
+// ── Translations ──────────────────────────────────────────────────────────────
+var TR = {
+  fr: {
+    campaign:"CAMPAGNE", freePlay:"PARTIE LIBRE", local1v1:"1v1 LOCAL",
+    trophies:"TROPHEES", settings:"PARAMETRES",
+    gridTitle:"TAILLE DE GRILLE", gridSub:"Choisissez votre terrain de jeu",
+    diffTitle:"DIFFICULTE DU BOT",
+    small:"PETITE", medium:"MOYENNE", large:"GRANDE",
+    smallDesc:"8x8 - Rapide", mediumDesc:"12x12 - Classique", largeDesc:"16x16 - Epique",
+    easy:"FACILE", normal:"NORMAL", hard:"DIFFICILE", extreme:"EXTREME",
+    easyDesc:"Bot aleatoire", normalDesc:"Meilleur coup immediat",
+    hardDesc:"Strategie avancee", extremeDesc:"IA maximale - Bonne chance",
+    step1:"ETAPE 1/2", step2:"ETAPE 2/2", back:"RETOUR",
+    you:"TOI", bot:"BOT", yourTurn:"TON TOUR", botThink:"BOT...", end:"FIN",
+    chooseColor:"Choisissez une couleur", botPlaying:"Bot en train de jouer...",
+    victory:"VICTOIRE !", defeat:"DEFAITE", draw:"EGALITE",
+    replay:"REJOUER", menu:"MENU", cells:"cases", moves:"coups",
+    language:"LANGUE", music:"MUSIQUE", musicOn:"ACTIVEE", musicOff:"DESACTIVEE",
+    volume:"VOLUME", save:"SAUVEGARDER", saved:"SAUVEGARDE",
+    customize:"Personnalisez votre experience",
+    loading:"CHARGEMENT...",
+    passPhone:"PASSE LE TELEPHONE A", yourTurnMsg:"C'est ton tour !",
+    ready:"JE SUIS PRET !",
+    launchGame:"LANCER LA PARTIE",
+    timerLabel:"TIMER PAR TOUR",
+    skins:"SKINS", skinsDesc:"Completez des niveaux pour debloquer des skins",
+    skinActive:"ACTIF", skinLocked:"Niveau requis",
+    trophyProgress:"Obtenez tous les trophees pour debloquer le skin PIXEL secret !",
+    trophyAll:"Felicitations ! Vous avez tout debloque !",
+    secretUnlocked:"SKIN SECRET DEBLOQUE !",
+    secretActive:"SKIN SECRET DEBLOQUE",
+    obtained:"OBTENU",
+    winner:"GAGNANT",
+    next:"SUIVANT",
+    lvl:"NIV",
+  },
+  en: {
+    campaign:"CAMPAIGN", freePlay:"FREE PLAY", local1v1:"1v1 LOCAL",
+    trophies:"TROPHIES", settings:"SETTINGS",
+    gridTitle:"GRID SIZE", gridSub:"Choose your battlefield",
+    diffTitle:"BOT DIFFICULTY",
+    small:"SMALL", medium:"MEDIUM", large:"LARGE",
+    smallDesc:"8x8 - Quick", mediumDesc:"12x12 - Classic", largeDesc:"16x16 - Epic",
+    easy:"EASY", normal:"NORMAL", hard:"HARD", extreme:"EXTREME",
+    easyDesc:"Bot plays randomly", normalDesc:"Best immediate move",
+    hardDesc:"Advanced strategy", extremeDesc:"Max AI - Good luck",
+    step1:"STEP 1/2", step2:"STEP 2/2", back:"BACK",
+    you:"YOU", bot:"BOT", yourTurn:"YOUR TURN", botThink:"BOT...", end:"END",
+    chooseColor:"Choose a color", botPlaying:"Bot is playing...",
+    victory:"VICTORY!", defeat:"DEFEAT", draw:"DRAW",
+    replay:"REPLAY", menu:"MENU", cells:"cells", moves:"moves",
+    language:"LANGUAGE", music:"MUSIC", musicOn:"ON", musicOff:"OFF",
+    volume:"VOLUME", save:"SAVE", saved:"SAVED",
+    customize:"Customize your experience",
+    loading:"LOADING...",
+    passPhone:"PASS THE PHONE TO", yourTurnMsg:"It's your turn!",
+    ready:"I AM READY!",
+    launchGame:"START GAME",
+    timerLabel:"TIMER PER TURN",
+    skins:"SKINS", skinsDesc:"Complete levels to unlock skins",
+    skinActive:"ACTIVE", skinLocked:"Level required",
+    trophyProgress:"Get all trophies to unlock the secret PIXEL skin!",
+    trophyAll:"Congratulations! You unlocked everything!",
+    secretUnlocked:"SECRET SKIN UNLOCKED!",
+    secretActive:"SECRET SKIN UNLOCKED",
+    obtained:"OBTAINED",
+    winner:"WINNER",
+    next:"NEXT",
+    lvl:"LVL",
+  },
+};
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+var _ctx=null,_gain=null,_oscs=[],_melTimer=null,_step=0;
+var _notes=[261.63,293.66,329.63,349.23,392.00,440.00,493.88,523.25];
+var _seq=[0,2,4,5,4,2,0,2,3,5,7,5,3,1,0,4];
+function startMusic(vol){
+  if(_ctx)return;
+  try{
+    _ctx=new(window.AudioContext||window.webkitAudioContext)();
+    _gain=_ctx.createGain();_gain.gain.value=vol*0.25;_gain.connect(_ctx.destination);
+    [130.81,164.81,196.00].forEach(function(f){var o=_ctx.createOscillator(),g=_ctx.createGain();o.type="sine";o.frequency.value=f;g.gain.value=0.04;o.connect(g);g.connect(_gain);o.start();_oscs.push(o);});
+    _melTimer=setInterval(function(){if(!_ctx)return;var o=_ctx.createOscillator(),e=_ctx.createGain();o.type="triangle";o.frequency.value=_notes[_seq[_step%_seq.length]];e.gain.setValueAtTime(0.1,_ctx.currentTime);e.gain.exponentialRampToValueAtTime(0.001,_ctx.currentTime+0.35);o.connect(e);e.connect(_gain);o.start(_ctx.currentTime);o.stop(_ctx.currentTime+0.38);_step++;},380);
+  }catch(e){}
+}
+function stopMusic(){if(_melTimer){clearInterval(_melTimer);_melTimer=null;}_oscs.forEach(function(o){try{o.stop();}catch(e){}});_oscs=[];if(_ctx){try{_ctx.close();}catch(e){}_ctx=null;_gain=null;}}
+function setMusicVol(vol){if(_gain&&_ctx)_gain.gain.setValueAtTime(vol*0.25,_ctx.currentTime);}
+
+// ── Logic ─────────────────────────────────────────────────────────────────────
+function mkGrid(size){return Array.from({length:size},function(){return Array.from({length:size},function(){return Math.floor(Math.random()*COLORS.length);});});}
+
+function flood(grid,territory,ci,size){
+  var T=new Set(territory),stack=[];
+  territory.forEach(function(k){var p=k.split(","),r=+p[0],c=+p[1];[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(function(nb){var nr=nb[0],nc=nb[1];if(nr>=0&&nr<size&&nc>=0&&nc<size){var nk=nr+","+nc;if(!T.has(nk)&&grid[nr][nc]===ci)stack.push(nk);}});});
+  while(stack.length){var k=stack.pop();if(T.has(k))continue;T.add(k);var p=k.split(","),r=+p[0],c=+p[1];[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(function(nb){var nr=nb[0],nc=nb[1];if(nr>=0&&nr<size&&nc>=0&&nc<size){var nk=nr+","+nc;if(!T.has(nk)&&grid[nr][nc]===ci)stack.push(nk);}});}
+  return T;
+}
+
+function paint(grid,territory,ci){var g=grid.map(function(r){return r.slice();});territory.forEach(function(k){var p=k.split(",");g[+p[0]][+p[1]]=ci;});return g;}
+
+function adjColors(grid,territory,size){var adj=new Set();territory.forEach(function(k){var p=k.split(","),r=+p[0],c=+p[1];[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(function(nb){var nr=nb[0],nc=nb[1];if(nr>=0&&nr<size&&nc>=0&&nc<size){var nk=nr+","+nc;if(!territory.has(nk))adj.add(grid[nr][nc]);}});});return adj;}
+
+function bestImmediate(grid,myT,size){var best=-1,bsc=-Infinity;for(var ci=0;ci<COLORS.length;ci++){var g=flood(grid,myT,ci,size);var gn=g.size-myT.size;if(gn>bsc){bsc=gn;best=ci;}}return best>=0?best:Math.floor(Math.random()*COLORS.length);}
+
+function bestHard(grid,myT,oppT,size,w1,w2){var best=-1,bsc=-Infinity;for(var ci=0;ci<COLORS.length;ci++){var g=flood(grid,myT,ci,size);var mg=g.size-myT.size;var ng=paint(grid,myT,ci);var ob=0;for(var pi=0;pi<COLORS.length;pi++){var np=flood(ng,oppT,pi,size);if(np.size-oppT.size>ob)ob=np.size-oppT.size;}var s=mg*w1-ob*w2;if(s>bsc){bsc=s;best=ci;}}return best>=0?best:Math.floor(Math.random()*COLORS.length);}
+
+var RAND_THRESH={"easy":1,"n1":0.75,"n2":0.55,"n3":0.40,"n4":0.20,"n5":0,"h1":0,"h2":0,"h3":0,"xtr":0,"normal":0,"hard":0,"extreme":0};
+function botMove(dk,grid,botT,playerT,size){
+  var rt=RAND_THRESH[dk]!==undefined?RAND_THRESH[dk]:0;
+  if(Math.random()<rt)return Math.floor(Math.random()*COLORS.length);
+  if(dk==="xtr"||dk==="extreme")return bestHard(grid,botT,playerT,size,3,2);
+  if(dk==="h3"||dk==="hard")return bestHard(grid,botT,playerT,size,2,1);
+  if(dk==="h2")return bestHard(grid,botT,playerT,size,1.5,0.75);
+  if(dk==="h1")return bestHard(grid,botT,playerT,size,1.2,0.4);
+  return bestImmediate(grid,botT,size);
+}
+
+// ── Skin helpers ──────────────────────────────────────────────────────────────
+function cellStyle(skinShape,color,cellPx,isP,isB){
+  var base={width:cellPx+"px",height:cellPx+"px",backgroundColor:color,transition:"background-color 0.25s,transform 0.15s",position:"relative",zIndex:(isP||isB)?2:1,transform:(isP||isB)?"scale(1.05)":"scale(1)",outline:isP?"2.5px solid rgba(255,255,255,0.9)":isB?"2.5px solid rgba(0,0,0,0.55)":"none"};
+  if(skinShape==="circle")return Object.assign({},base,{borderRadius:"50%"});
+  if(skinShape==="soft")return Object.assign({},base,{borderRadius:"30%"});
+  if(skinShape==="brick")return Object.assign({},base,{borderRadius:"4px",boxShadow:"inset 0 0 0 2px rgba(0,0,0,0.35)"});
+  if(skinShape==="neon")return Object.assign({},base,{borderRadius:"4px",boxShadow:"0 0 7px "+color+"cc"});
+  if(skinShape==="gem")return Object.assign({},base,{borderRadius:"40% 60% 40% 60%"});
+  if(skinShape==="pixel")return Object.assign({},base,{borderRadius:"0px",imageRendering:"pixelated",boxShadow:"inset 0 0 0 2px rgba(0,0,0,0.6), inset 2px 2px 0 rgba(255,255,255,0.25)"});
+  return Object.assign({},base,{borderRadius:"2px"});
+}
+
+// ── Stars ─────────────────────────────────────────────────────────────────────
+function calcStars(pct){if(pct>=76)return 3;if(pct>=61)return 2;if(pct>50)return 1;return 0;}
+
+// ── MENU ──────────────────────────────────────────────────────────────────────
+function MenuScreen(props){
+  var t=TR[props.lang||"fr"];
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},80);return function(){clearTimeout(id);};});
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",overflow:"hidden",position:"relative"}}>
+      {COLORS.map(function(color,i){return(<div key={i} style={{position:"absolute",width:(55+i*22)+"px",height:(55+i*22)+"px",borderRadius:"14px",background:color,opacity:0.06,top:(8+i*13)+"%",left:(3+i*15)+"%",transform:"rotate("+(i*18)+"deg)"}}/>);})}
+      <div style={{zIndex:10,display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",padding:"32px",opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(28px)",transition:"all 0.65s ease"}}>
+        <div style={{display:"flex",gap:"9px",marginBottom:"28px"}}>
+          {COLORS.map(function(c,i){return(<div key={i} style={{width:"15px",height:"15px",borderRadius:"4px",background:c,boxShadow:"0 0 10px "+c,animation:"dotP 1.6s ease-in-out "+(i*0.18)+"s infinite alternate"}}/>);})}
+        </div>
+        <div style={{fontSize:"44px",fontWeight:"900",letterSpacing:"7px",lineHeight:"1",background:"linear-gradient(135deg,#FF3366 0%,#00E5FF 50%,#ADFF2F 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:"4px"}}>COLOR</div>
+        <div style={{fontSize:"44px",fontWeight:"900",letterSpacing:"7px",lineHeight:"1",background:"linear-gradient(135deg,#ADFF2F 0%,#FF9500 50%,#BF5FFF 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:"10px"}}>TAKEOVER</div>
+        <div style={{color:"#2d2d2d",fontSize:"10px",letterSpacing:"3px",marginBottom:"44px"}}>TERRITOIRE · STRATEGIE · CONQUETE</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"3px",marginBottom:"44px",padding:"10px",background:"#101010",borderRadius:"14px",border:"1px solid #1a1a1a"}}>
+          {Array.from({length:49}).map(function(_,i){return(<div key={i} style={{width:"24px",height:"24px",borderRadius:"4px",background:COLORS[i%COLORS.length],opacity:0.55}}/>);})}</div>
+        <button onClick={props.onCampaign} style={{background:"linear-gradient(135deg,#FF9500,#FF3366)",border:"none",color:"white",padding:"16px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"4px",fontSize:"15px",fontWeight:"900",fontFamily:"monospace",boxShadow:"0 0 24px #FF950077",marginBottom:"10px",width:"260px",transition:"transform 0.15s"}} onMouseOver={function(e){e.currentTarget.style.transform="scale(1.05)";}} onMouseOut={function(e){e.currentTarget.style.transform="scale(1)";}}>
+          {">>" + " " + t.campaign}
+        </button>
+        <button onClick={props.onLocal} style={{background:"linear-gradient(135deg,#00E5FF,#BF5FFF)",border:"none",color:"white",padding:"16px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"4px",fontSize:"15px",fontWeight:"900",fontFamily:"monospace",boxShadow:"0 0 24px #00E5FF55",marginBottom:"10px",width:"260px",transition:"transform 0.15s"}} onMouseOver={function(e){e.currentTarget.style.transform="scale(1.05)";}} onMouseOut={function(e){e.currentTarget.style.transform="scale(1)";}}>
+          {">> " + t.local1v1}
+        </button>
+        <button onClick={props.onFreePlay} style={{background:"transparent",border:"2px solid #BF5FFF55",color:"#BF5FFF",padding:"14px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"4px",fontSize:"13px",fontWeight:"900",fontFamily:"monospace",marginBottom:"10px",width:"260px",transition:"all 0.15s"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#BF5FFF";e.currentTarget.style.background="#BF5FFF11";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#BF5FFF55";e.currentTarget.style.background="transparent";}}>
+          {">>" + " " + t.freePlay}
+        </button>
+        <button onClick={props.onTrophies} style={{background:"transparent",border:"2px solid #FFE60044",color:"#FFE600",padding:"11px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"3px",fontSize:"12px",fontFamily:"monospace",width:"260px",transition:"all 0.2s",marginBottom:"10px"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#FFE600";e.currentTarget.style.background="#FFE60011";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#FFE60044";e.currentTarget.style.background="transparent";}}>
+          {"[*] " + t.trophies}
+        </button>
+        <button onClick={props.onStats} style={{background:"transparent",border:"2px solid #00E5FF33",color:"#00E5FF",padding:"11px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"3px",fontSize:"12px",fontFamily:"monospace",width:"260px",transition:"all 0.2s",marginBottom:"10px"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#00E5FF";e.currentTarget.style.background="#00E5FF11";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#00E5FF33";e.currentTarget.style.background="transparent";}}>
+          {"[=] STATS"}
+        </button>
+                <button onClick={props.onSettings} style={{background:"transparent",border:"2px solid #1e1e1e",color:"#444",padding:"11px 56px",borderRadius:"14px",cursor:"pointer",letterSpacing:"3px",fontSize:"12px",fontFamily:"monospace",width:"260px",transition:"all 0.2s"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#333";e.currentTarget.style.color="#777";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#1e1e1e";e.currentTarget.style.color="#444";}}>
+          {"⚙ " + t.settings}
+        </button>
+      </div>
+      <style>{"@keyframes dotP{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.35);opacity:1}} @keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}"}</style>
+    </div>
+  );
+}
+
+// ── CAMPAIGN MAP ──────────────────────────────────────────────────────────────
+function CampaignScreen(props){
+  var t=TR[props.lang||"fr"];
+  var progress=props.progress;
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  var skinRewardAt={1:1,3:2,6:3,8:4,10:5};
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"16px 12px 32px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"420px"}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:"20px",gap:"8px"}}>
+          <button onClick={props.onBack} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#444",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace"}}>{"<"}</button>
+          <div style={{flex:1,textAlign:"center",fontSize:"18px",fontWeight:"900",letterSpacing:"4px",background:"linear-gradient(90deg,#FF9500,#FF3366)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>CAMPAGNE</div>
+          <button onClick={props.onSkins} style={{background:"#BF5FFF22",border:"1px solid #BF5FFF55",color:"#BF5FFF",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"9px",letterSpacing:"1px",fontFamily:"monospace"}}>SKINS</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          {LEVELS.map(function(lv){
+            var done=progress.completed[lv.n-1];
+            var unlocked=lv.n===1||progress.completed[lv.n-2];
+            var stars=done?calcStars(progress.bestScores[lv.n-1]):0;
+            var hasSkinReward=skinRewardAt[lv.n]!==undefined;
+            var skinUnlocked=done&&hasSkinReward;
+            return (
+              <button key={lv.n} onClick={function(){if(unlocked)props.onPlay(lv);}} disabled={!unlocked} style={{background:done?"#0d1a0d":unlocked?"#111":"#0a0a0a",border:"2px solid "+(done?lv.col:unlocked?"#222":"#111"),borderRadius:"14px",padding:"14px 12px",cursor:unlocked?"pointer":"not-allowed",textAlign:"left",transition:"all 0.2s",boxShadow:done?("0 0 12px "+lv.col+"33"):"none",opacity:unlocked?1:0.5,position:"relative"}}
+                onMouseOver={function(e){if(unlocked)e.currentTarget.style.transform="scale(1.02)";}}
+                onMouseOut={function(e){e.currentTarget.style.transform="scale(1)";}}>
+                {!unlocked&&<div style={{position:"absolute",top:"8px",right:"10px",fontSize:"14px"}}>{"[X]"}</div>}
+                <div style={{fontSize:"28px",fontWeight:"900",color:unlocked?lv.col:"#333",lineHeight:"1",marginBottom:"4px"}}>{lv.n}</div>
+                <div style={{fontSize:"9px",fontWeight:"900",letterSpacing:"2px",color:unlocked?lv.col:"#333",marginBottom:"6px"}}>{lv.label}</div>
+                <div style={{fontSize:"9px",color:"#333",marginBottom:"4px"}}>{lv.size+"x"+lv.size + " · " + lv.timer+"s"}</div>
+                {done&&<div style={{fontSize:"10px",color:"#ADFF2F",marginBottom:"4px"}}>{progress.bestScores[lv.n-1]+"%"}</div>}
+                <div style={{display:"flex",gap:"2px",marginBottom:"4px"}}>
+                  {[0,1,2].map(function(s){return(<div key={s} style={{width:"10px",height:"10px",borderRadius:"50%",background:s<stars?"#FFE600":"#1e1e1e"}}/>);})}</div>
+                {hasSkinReward&&<div style={{fontSize:"8px",color:skinUnlocked?"#BF5FFF":"#2a2a2a",letterSpacing:"1px"}}>{"[SKIN: "+SKINS[skinRewardAt[lv.n]].name+"]"}</div>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SKIN SELECT ───────────────────────────────────────────────────────────────
+function SkinScreen(props){
+  var t=TR[props.lang||"fr"];
+  var progress=props.progress;
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"16px 12px 32px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"420px"}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:"20px",gap:"8px"}}>
+          <button onClick={props.onBack} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#444",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace"}}>{"<"}</button>
+          <div style={{flex:1,textAlign:"center",fontSize:"18px",fontWeight:"900",letterSpacing:"4px",color:"#BF5FFF"}}>SKINS</div>
+        </div>
+        <div style={{fontSize:"11px",color:"#333",textAlign:"center",marginBottom:"20px",letterSpacing:"2px"}}>Completez des niveaux pour debloquer des skins</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          {SKINS.map(function(sk){
+            var unlocked=sk.id===6?(props.activeSkin===6):progress.completed.filter(Boolean).length>=sk.unlockAt;
+            var active=props.activeSkin===sk.id;
+            var previewColors=["#FF3366","#00E5FF","#ADFF2F","#FF9500"];
+            return (
+              <button key={sk.id} onClick={function(){if(unlocked)props.onSelect(sk.id);}} disabled={!unlocked} style={{background:active?"#BF5FFF22":unlocked?"#111":"#0a0a0a",border:"2px solid "+(active?"#BF5FFF":unlocked?"#222":"#111"),borderRadius:"14px",padding:"14px 18px",cursor:unlocked?"pointer":"not-allowed",display:"flex",alignItems:"center",gap:"16px",transition:"all 0.2s",boxShadow:active?"0 0 16px #BF5FFF44":"none",opacity:unlocked?1:0.4}}
+                onMouseOver={function(e){if(unlocked&&!active)e.currentTarget.style.borderColor="#444";}}
+                onMouseOut={function(e){if(!active)e.currentTarget.style.borderColor=unlocked?"#222":"#111";}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",flexShrink:0}}>
+                  {previewColors.map(function(c,i){return(<div key={i} style={cellStyle(sk.shape,c,14,false,false)}/>);})}</div>
+                <div style={{textAlign:"left",flex:1}}>
+                  <div style={{fontSize:"14px",fontWeight:"900",letterSpacing:"2px",color:active?"#BF5FFF":unlocked?"#bbb":"#333",marginBottom:"3px"}}>{sk.name}</div>
+                  <div style={{fontSize:"10px",color:unlocked?"#4a4a4a":"#2a2a2a"}}>{unlocked?sk.desc:("Niveau "+sk.unlockAt+" requis")}</div>
+                </div>
+                {active&&<div style={{fontSize:"10px",color:"#BF5FFF",fontWeight:"900",letterSpacing:"1px"}}>ACTIF</div>}
+                {!unlocked&&<div style={{fontSize:"10px",color:"#2a2a2a"}}>[LVL {sk.unlockAt}]</div>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GRID SELECT ───────────────────────────────────────────────────────────────
+function getGridOpts(t){return [{label:t.small,size:8,desc:t.smallDesc},{label:t.medium,size:12,desc:t.mediumDesc},{label:t.large,size:16,desc:t.largeDesc}];}
+function getDiffOpts(t){return [{label:t.easy,dk:"easy",desc:t.easyDesc,col:"#ADFF2F"},{label:t.normal,dk:"normal",desc:t.normalDesc,col:"#00E5FF"},{label:t.hard,dk:"hard",desc:t.hardDesc,col:"#FF9500"},{label:t.extreme,dk:"extreme",desc:t.extremeDesc,col:"#FF3366"}];}
+
+function GridSelectScreen(props){
+  var t=TR[props.lang||"fr"];
+  var GRID_OPTS=getGridOpts(t);
+  var selS=useState(null);var sel=selS[0];var setSel=selS[1];
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",padding:"24px 16px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"400px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{fontSize:"10px",color:"#333",letterSpacing:"3px",marginBottom:"6px"}}>ETAPE 1 / 2</div>
+        <div style={{fontSize:"24px",fontWeight:"900",letterSpacing:"4px",color:"#fff",marginBottom:"36px"}}>TAILLE DE GRILLE</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"12px",width:"100%"}}>
+          {GRID_OPTS.map(function(opt,i){var color=COLORS[i*2];var isSel=sel===i;var pc=Math.min(opt.size,7),pr=Math.min(opt.size,3);return(
+            <button key={i} onClick={function(){setSel(i);setTimeout(function(){props.onSelect(opt);},220);}} style={{background:isSel?(color+"1a"):"#111",border:"2px solid "+(isSel?color:"#1c1c1c"),borderRadius:"16px",padding:"18px 22px",cursor:"pointer",display:"flex",alignItems:"center",gap:"18px",transition:"all 0.2s",boxShadow:isSel?("0 0 22px "+color+"44"):"none",transform:isSel?"scale(1.02)":"scale(1)"}} onMouseOver={function(e){if(!isSel){e.currentTarget.style.borderColor="#2a2a2a";e.currentTarget.style.background="#161616";}}} onMouseOut={function(e){if(!isSel){e.currentTarget.style.borderColor="#1c1c1c";e.currentTarget.style.background="#111";}}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat("+pc+",1fr)",gap:"2px",width:"54px",flexShrink:0}}>
+                {Array.from({length:pc*pr}).map(function(_,j){return(<div key={j} style={{width:"100%",aspectRatio:"1",borderRadius:"2px",background:COLORS[j%COLORS.length],opacity:0.65}}/>);})}</div>
+              <div style={{textAlign:"left",flex:1}}>
+                <div style={{fontSize:"16px",fontWeight:"900",letterSpacing:"2px",color:isSel?color:"#bbb",marginBottom:"4px"}}>{opt.label}</div>
+                <div style={{fontSize:"11px",color:"#4a4a4a"}}>{opt.desc}</div>
+              </div>
+              <div style={{fontSize:"18px",color:isSel?color:"#2a2a2a"}}>{isSel?"●":"○"}</div>
+            </button>
+          );})}
+        </div>
+        <button onClick={props.onBack} style={{background:"transparent",border:"none",color:"#2e2e2e",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",fontFamily:"monospace",padding:"8px",marginTop:"28px"}}>{"< " + t.back}</button>
+      </div>
+    </div>
+  );
+}
+
+function DiffSelectScreen(props){
+  var t=TR[props.lang||"fr"];
+  var DIFF_OPTS=getDiffOpts(t);
+  var selS=useState(null);var sel=selS[0];var setSel=selS[1];
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",padding:"24px 16px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"400px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{fontSize:"10px",color:"#333",letterSpacing:"3px",marginBottom:"6px"}}>ETAPE 2 / 2</div>
+        <div style={{fontSize:"24px",fontWeight:"900",letterSpacing:"4px",color:"#fff",marginBottom:"36px"}}>DIFFICULTE</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px",width:"100%"}}>
+          {DIFF_OPTS.map(function(opt,i){var isSel=sel===i;return(
+            <button key={i} onClick={function(){setSel(i);setTimeout(function(){props.onSelect(opt);},220);}} style={{background:isSel?(opt.col+"1a"):"#111",border:"2px solid "+(isSel?opt.col:"#1c1c1c"),borderRadius:"16px",padding:"15px 22px",cursor:"pointer",display:"flex",alignItems:"center",gap:"16px",transition:"all 0.2s",boxShadow:isSel?("0 0 22px "+opt.col+"44"):"none"}} onMouseOver={function(e){if(!isSel){e.currentTarget.style.borderColor="#2a2a2a";e.currentTarget.style.background="#161616";}}} onMouseOut={function(e){if(!isSel){e.currentTarget.style.borderColor="#1c1c1c";e.currentTarget.style.background="#111";}}}>
+              <div style={{textAlign:"left",flex:1}}>
+                <div style={{fontSize:"15px",fontWeight:"900",letterSpacing:"2px",color:isSel?opt.col:"#bbb",marginBottom:"3px"}}>{opt.label}</div>
+                <div style={{fontSize:"11px",color:"#4a4a4a"}}>{opt.desc}</div>
+              </div>
+              <div style={{display:"flex",gap:"3px",alignItems:"flex-end"}}>
+                {[0,1,2,3].map(function(d){return(<div key={d} style={{width:"6px",height:(10+d*4)+"px",borderRadius:"3px",background:d<=i?opt.col:"#1e1e1e"}}/>);})}</div>
+            </button>
+          );})}
+        </div>
+        <button onClick={props.onBack} style={{background:"transparent",border:"none",color:"#2e2e2e",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",fontFamily:"monospace",padding:"8px",marginTop:"28px"}}>{"< " + t.back}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+function SettingsScreen(props){
+  var t=TR[props.lang||"fr"];
+  var locS=useState(props.settings);var local=locS[0];var setLocal=locS[1];
+  var savedS=useState(false);var saved=savedS[0];var setSaved=savedS[1];
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  function setKey(k,v){setLocal(function(p){var n=Object.assign({},p);n[k]=v;return n;});}
+  function handleSave(){props.onChange(local);if(local.music&&!props.settings.music)startMusic(local.volume/100);else if(!local.music&&props.settings.music)stopMusic();else if(local.music)setMusicVol(local.volume/100);setSaved(true);setTimeout(function(){setSaved(false);},2000);}
+  var vLevels=[0,30,60,100];var vLabels=["[0]","[30]","[60]","[100]"];
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",padding:"24px 16px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"400px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{fontSize:"24px",fontWeight:"900",letterSpacing:"5px",color:"#fff",marginBottom:"6px"}}>{"PARAMETRES"}</div>
+        <div style={{fontSize:"11px",color:"#333",letterSpacing:"2px",marginBottom:"36px"}}>Personnalisez votre experience</div>
+        <div style={{width:"100%",marginBottom:"20px"}}>
+          <div style={{fontSize:"10px",color:"#444",letterSpacing:"3px",marginBottom:"10px"}}>LANGUE</div>
+          <div style={{display:"flex",gap:"10px"}}>
+            {[{k:"fr",l:"Francais"},{k:"en",l:"English"}].map(function(lg){var isSel=local.lang===lg.k;return(
+              <button key={lg.k} onClick={function(){setKey("lang",lg.k);}} style={{flex:1,padding:"14px 10px",borderRadius:"12px",cursor:"pointer",background:isSel?"#ffffff10":"#111",border:"2px solid "+(isSel?"#ffffff55":"#1e1e1e"),color:isSel?"#fff":"#555",fontFamily:"monospace",fontSize:"13px",fontWeight:isSel?"900":"400",display:"flex",flexDirection:"column",alignItems:"center",gap:"6px"}}>
+                <span style={{fontSize:"18px",fontWeight:"900"}}>{lg.k.toUpperCase()}</span>
+                <span>{lg.l}</span>
+                {isSel&&<span style={{fontSize:"8px",color:"#ADFF2F",letterSpacing:"2px"}}>ACTIF</span>}
+              </button>
+            );})}
+          </div>
+        </div>
+        <div style={{width:"100%",background:"#111",borderRadius:"14px",padding:"18px 20px",marginBottom:"14px",border:"1px solid #1a1a1a"}}>
+          <div style={{fontSize:"10px",color:"#444",letterSpacing:"3px",marginBottom:"14px"}}>MUSIQUE</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"18px"}}>
+            <span style={{fontSize:"13px",color:local.music?"#fff":"#444"}}>{local.music?t.musicOn:t.musicOff}</span>
+            <div onClick={function(){setKey("music",!local.music);}} style={{width:"52px",height:"28px",borderRadius:"14px",cursor:"pointer",background:local.music?"linear-gradient(90deg,#BF5FFF,#FF3366)":"#1e1e1e",border:"2px solid "+(local.music?"#BF5FFF55":"#2a2a2a"),position:"relative",transition:"all 0.3s"}}>
+              <div style={{position:"absolute",top:"3px",left:local.music?"24px":"3px",width:"18px",height:"18px",borderRadius:"50%",background:"white",transition:"left 0.3s"}}/>
+            </div>
+          </div>
+          <div style={{opacity:local.music?1:0.3,transition:"opacity 0.3s",pointerEvents:local.music?"auto":"none"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+              <span style={{fontSize:"10px",color:"#444",letterSpacing:"2px"}}>VOLUME</span>
+              <span style={{fontSize:"12px",color:"#BF5FFF",fontWeight:"900"}}>{local.volume+"%"}</span>
+            </div>
+            <div style={{position:"relative",height:"6px",background:"#1e1e1e",borderRadius:"3px",cursor:"pointer"}} onClick={function(ev){var rect=ev.currentTarget.getBoundingClientRect();var pct=Math.round(Math.max(0,Math.min(1,(ev.clientX-rect.left)/rect.width))*100);setKey("volume",pct);}}>
+              <div style={{position:"absolute",left:"0",top:"0",height:"100%",width:local.volume+"%",background:"linear-gradient(90deg,#BF5FFF,#FF3366)",borderRadius:"3px"}}/>
+              <div style={{position:"absolute",top:"-5px",left:"calc("+local.volume+"% - 8px)",width:"16px",height:"16px",borderRadius:"50%",background:"white",boxShadow:"0 0 8px #BF5FFF88"}}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:"10px"}}>
+              {vLevels.map(function(v,i){return(<button key={i} onClick={function(){setKey("volume",v);}} style={{background:"transparent",border:"1px solid "+(local.volume===v?"#BF5FFF":"#222"),color:local.volume===v?"#BF5FFF":"#444",cursor:"pointer",fontSize:"10px",padding:"5px 8px",borderRadius:"6px",fontFamily:"monospace"}}>{vLabels[i]}</button>);})}
+            </div>
+          </div>
+        </div>
+        <button onClick={handleSave} style={{width:"100%",padding:"15px",borderRadius:"12px",cursor:"pointer",background:saved?"#ADFF2F22":"linear-gradient(135deg,#FF3366,#BF5FFF)",border:saved?"2px solid #ADFF2F":"2px solid transparent",color:saved?"#ADFF2F":"white",fontFamily:"monospace",fontSize:"13px",fontWeight:"900",letterSpacing:"3px",marginBottom:"4px"}}>
+          {saved?"✓ "+t.saved:t.save}
+        </button>
+        <button onClick={props.onBack} style={{background:"transparent",border:"none",color:"#2e2e2e",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",fontFamily:"monospace",padding:"8px",marginTop:"20px"}}>{"< " + t.back}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── GAME ──────────────────────────────────────────────────────────────────────
+function GameScreen(props){
+  var t=TR[props.lang||"fr"];
+  var size=props.size;
+  var timerMax=props.timerSecs;
+  var skinShape=SKINS[props.activeSkin].shape;
+
+  var gridS=useState(function(){return mkGrid(size);});var grid=gridS[0];var setGrid=gridS[1];
+  var ptS=useState(function(){return new Set(["0,0"]);});var playerT=ptS[0];var setPlayerT=ptS[1];
+  var btS=useState(function(){return new Set([(size-1)+","+(size-1)]);});var botT=btS[0];var setBotT=btS[1];
+  var pcS=useState(0);var playerColor=pcS[0];var setPlayerColor=pcS[1];
+  var bcS=useState(COLORS.length-1);var botColor=bcS[0];var setBotColor=bcS[1];
+  var turnS=useState("player");var turn=turnS[0];var setTurn=turnS[1];
+  var movesS=useState(0);var moves=movesS[0];var setMoves=movesS[1];
+  var goS=useState(false);var gameOver=goS[0];var setGameOver=goS[1];
+  var winS=useState(null);var winner=winS[0];var setWinner=winS[1];
+  var timeS=useState(timerMax);var timeLeft=timeS[0];var setTimeLeft=timeS[1];
+  var botRef=useRef(null);var timerRef=useRef(null);
+  var handleMoveRef=useRef(null);
+
+  var initGame=useCallback(function(){
+    var g=mkGrid(size);
+    setGrid(g);setPlayerT(new Set(["0,0"]));setBotT(new Set([(size-1)+","+(size-1)]));
+    setPlayerColor(g[0][0]);setBotColor(g[size-1][size-1]);
+    setTurn("player");setMoves(0);setGameOver(false);setWinner(null);setTimeLeft(timerMax);
+  },[size,timerMax]);
+
+  var checkWin=useCallback(function(pt,bt,movesCount,timerLeft){
+    var total=size*size;
+    if(pt.size+bt.size>=total||pt.size>total/2||bt.size>total/2){
+      var w=pt.size>bt.size?"player":bt.size>pt.size?"bot":"draw";
+      var pct=Math.round((pt.size/total)*100);
+      setWinner(w);setGameOver(true);
+      if(props.onGameEnd){props.onGameEnd({won:w==="player",pct:pct,moves:movesCount||0,timeRemaining:timerLeft||0});}
+      if(w==="player"&&props.onLevelWin){props.onLevelWin(props.levelNum,pct);}
+      return true;
+    }
+    return false;
+  },[size,props.onGameEnd,props.onLevelWin,props.levelNum]);
+
+  var handleMove=useCallback(function(ci){
+    if(turn!=="player"||gameOver||ci===playerColor)return;
+    if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}
+    var ng=paint(grid,playerT,ci);var npt=flood(ng,playerT,ci,size);
+    setGrid(ng);setPlayerT(npt);setPlayerColor(ci);setMoves(function(m){return m+1;});
+    if(!checkWin(npt,botT,moves+1,timeLeft))setTurn("bot");
+  },[turn,gameOver,grid,playerT,botT,playerColor,checkWin,size]);
+
+  useEffect(function(){handleMoveRef.current=handleMove;},[handleMove]);
+
+  // Timer
+  useEffect(function(){
+    if(turn!=="player"||gameOver){if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}return;}
+    setTimeLeft(timerMax);
+    timerRef.current=setInterval(function(){setTimeLeft(function(t){return t-1;});},1000);
+    return function(){if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}};
+  },[turn,gameOver,timerMax]);
+
+  // Auto-play when timer expires
+  useEffect(function(){
+    if(timeLeft<=0&&turn==="player"&&!gameOver){
+      var adj=adjColors(grid,playerT,size);var arr=[];
+      adj.forEach(function(ci){if(ci!==playerColor)arr.push(ci);});
+      if(arr.length>0)handleMoveRef.current(arr[Math.floor(Math.random()*arr.length)]);
+    }
+  },[timeLeft]);
+
+  // Bot turn
+  useEffect(function(){
+    if(turn==="bot"&&!gameOver){
+      botRef.current=setTimeout(function(){
+        var move=botMove(props.diffKey,grid,botT,playerT,size);
+        var ng=paint(grid,botT,move);var nbt=flood(ng,botT,move,size);
+        setGrid(ng);setBotT(nbt);setBotColor(move);
+        if(!checkWin(playerT,nbt))setTurn("player");
+      },Math.min(700,props.botDelay||600));
+    }
+    return function(){clearTimeout(botRef.current);};
+  },[turn,gameOver,grid,botT,playerT,props.diffKey,checkWin,size]);
+
+  var total=size*size;
+  var pPct=Math.round((playerT.size/total)*100);
+  var bPct=Math.round((botT.size/total)*100);
+  var adj=adjColors(grid,playerT,size);
+  var cellPx=Math.min(Math.floor(340/size),30);
+  var winColor=winner==="player"?"#ADFF2F":winner==="bot"?"#FF3366":"#FFE600";
+  var timerPct=(timeLeft/timerMax)*100;
+  var timerColor=timerPct>60?"#ADFF2F":timerPct>30?"#FF9500":"#FF3366";
+  var stars=calcStars(pPct);
+  var newSkin=props.isCampaign&&winner==="player"?props.skinReward:null;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"10px 8px 20px",userSelect:"none"}}>
+      <div style={{display:"flex",alignItems:"center",width:"100%",maxWidth:"420px",marginBottom:"8px",gap:"8px"}}>
+        <button onClick={props.onMenu} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#383838",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace",flexShrink:0}}>{"< " + t.menu}</button>
+        <div style={{flex:1,textAlign:"center"}}><span style={{fontSize:"13px",fontWeight:"900",letterSpacing:"3px",background:"linear-gradient(90deg,#FF3366,#00E5FF,#ADFF2F)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>COLOR TAKEOVER</span></div>
+        {props.isCampaign&&<div style={{background:"#FF950022",border:"1px solid #FF950055",color:"#FF9500",padding:"5px 8px",borderRadius:"8px",fontSize:"9px",fontWeight:"900",flexShrink:0}}>{"LVL "+props.levelNum}</div>}
+      </div>
+
+      {/* Timer bar */}
+      <div style={{width:"100%",maxWidth:"420px",height:"6px",background:"#111",borderRadius:"3px",marginBottom:"8px",overflow:"hidden",position:"relative"}}>
+        <div style={{height:"100%",width:timerPct+"%",background:timerColor,borderRadius:"3px",transition:"width 1s linear, background 0.5s"}}/>
+        <div style={{position:"absolute",right:"6px",top:"-1px",fontSize:"10px",color:timerColor,fontWeight:"900"}}>{timeLeft+"s"}</div>
+      </div>
+
+      {/* Scores */}
+      <div style={{display:"flex",width:"100%",maxWidth:"420px",marginBottom:"8px",gap:"8px",alignItems:"center"}}>
+        <div style={{flex:1,background:"#0f0f0f",border:"2px solid "+COLORS[playerColor],borderRadius:"12px",padding:"8px 12px",boxShadow:"0 0 12px "+COLORS[playerColor]+"33"}}>
+          <div style={{fontSize:"9px",color:"#555"}}>TOI</div>
+          <div style={{fontSize:"22px",fontWeight:"900",color:COLORS[playerColor]}}>{pPct+"%"}</div>
+          <div style={{fontSize:"10px",color:"#383838"}}>{playerT.size+" cases"}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px",minWidth:"46px"}}>
+          <div style={{width:"8px",height:"8px",borderRadius:"50%",background:turn==="player"?"#ADFF2F":"#FF3366",boxShadow:"0 0 8px "+(turn==="player"?"#ADFF2F":"#FF3366"),animation:"blink 0.9s infinite"}}/>
+          <div style={{fontSize:"8px",color:"#333",textAlign:"center"}}>{gameOver?t.end:turn==="player"?t.yourTurn:t.botThink}</div>
+          <div style={{fontSize:"9px",color:"#222"}}>{"#"+moves}</div>
+        </div>
+        <div style={{flex:1,background:"#0f0f0f",border:"2px solid "+COLORS[botColor],borderRadius:"12px",padding:"8px 12px",textAlign:"right",boxShadow:"0 0 12px "+COLORS[botColor]+"33"}}>
+          <div style={{fontSize:"9px",color:"#555"}}>BOT</div>
+          <div style={{fontSize:"22px",fontWeight:"900",color:COLORS[botColor]}}>{bPct+"%"}</div>
+          <div style={{fontSize:"10px",color:"#383838"}}>{botT.size+" cases"}</div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{width:"100%",maxWidth:"420px",height:"4px",background:"#111",borderRadius:"3px",marginBottom:"8px",overflow:"hidden",display:"flex"}}>
+        <div style={{width:pPct+"%",background:COLORS[playerColor],transition:"width 0.35s"}}/>
+        <div style={{flex:1}}/>
+        <div style={{width:bPct+"%",background:COLORS[botColor],transition:"width 0.35s"}}/>
+      </div>
+
+      {/* Grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+size+","+cellPx+"px)",gap:"2px",marginBottom:"10px",padding:"6px",background:"#0f0f0f",borderRadius:"12px",border:"1px solid #181818"}}>
+        {grid.map(function(row,r){return row.map(function(_,c){
+          var k=r+","+c;var isP=playerT.has(k);var isB=botT.has(k);
+          return(<div key={k} style={cellStyle(skinShape,COLORS[grid[r][c]],cellPx,isP,isB)}/>);
+        });})}</div>
+
+      {/* Color buttons */}
+      <div style={{display:"flex",gap:"8px",marginBottom:"8px",flexWrap:"wrap",justifyContent:"center",maxWidth:"420px"}}>
+        {COLORS.map(function(color,idx){
+          var isAdj=adj.has(idx);var isCur=idx===playerColor;var dis=isCur||turn!=="player"||gameOver;
+          return(<button key={idx} onClick={function(){handleMove(idx);}} disabled={dis} style={{width:"50px",height:"50px",borderRadius:skinShape==="circle"?"50%":skinShape==="gem"?"40% 60% 40% 60%":"12px",background:color,border:isCur?"3px solid white":isAdj?"3px solid rgba(255,255,255,0.6)":"3px solid transparent",cursor:dis?"not-allowed":"pointer",opacity:isCur?0.3:(!isAdj&&turn==="player"&&!gameOver)?0.25:1,transform:(isAdj&&!isCur&&turn==="player")?"scale(1.13)":"scale(1)",transition:"all 0.18s",boxShadow:(isAdj&&!isCur&&turn==="player")?("0 0 16px "+color+"99"):"none",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {isCur?"*":""}
+          </button>);
+        })}
+      </div>
+      {!gameOver&&<div style={{fontSize:"10px",color:"#222",letterSpacing:"1px"}}>{turn==="player"?t.chooseColor:t.botPlaying}</div>}
+
+      {/* Game Over overlay */}
+      {gameOver&&(
+        <div style={{background:"#0a0a0a",border:"2px solid "+winColor,borderRadius:"18px",padding:"22px 28px",textAlign:"center",boxShadow:"0 0 28px "+winColor+"44",marginTop:"10px",width:"100%",maxWidth:"340px"}}>
+          <div style={{fontSize:"30px",marginBottom:"6px"}}>{winner==="player"?"[WIN]":winner==="bot"?"[LOSE]":"[DRAW]"}</div>
+          <div style={{fontSize:"22px",fontWeight:"900",letterSpacing:"3px",color:winColor,marginBottom:"4px"}}>{winner==="player"?t.victory:winner==="bot"?t.defeat:t.draw}</div>
+          {winner==="player"&&<div style={{display:"flex",gap:"6px",justifyContent:"center",marginBottom:"8px"}}>
+            {[0,1,2].map(function(s){return(<div key={s} style={{width:"18px",height:"18px",borderRadius:"50%",background:s<stars?"#FFE600":"#1e1e1e",boxShadow:s<stars?"0 0 8px #FFE60088":"none"}}/>);})}</div>}
+          <div style={{fontSize:"11px",color:"#3a3a3a",marginBottom:"6px"}}>{pPct+"% vs "+bPct+"% · "+moves+" coups"}</div>
+          {newSkin&&<div style={{background:"#BF5FFF22",border:"1px solid #BF5FFF55",borderRadius:"10px",padding:"8px",marginBottom:"10px"}}>
+            <div style={{fontSize:"9px",color:"#BF5FFF",letterSpacing:"2px",marginBottom:"4px"}}>SKIN DEBLOQUE !</div>
+            <div style={{fontSize:"14px",color:"#BF5FFF",fontWeight:"900"}}>{SKINS[newSkin].name}</div>
+          </div>}
+          <div style={{display:"flex",gap:"8px",justifyContent:"center"}}>
+            <button onClick={initGame} style={{background:"#191919",border:"2px solid #2a2a2a",color:"#777",padding:"10px 16px",borderRadius:"10px",cursor:"pointer",letterSpacing:"2px",fontSize:"10px",fontFamily:"monospace"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#444";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#2a2a2a";}}>REJOUER</button>
+            {props.isCampaign&&props.nextLevel&&winner==="player"&&<button onClick={props.onNextLevel} style={{background:"#ADFF2F22",border:"2px solid #ADFF2F",color:"#ADFF2F",padding:"10px 16px",borderRadius:"10px",cursor:"pointer",letterSpacing:"2px",fontSize:"10px",fontFamily:"monospace",fontWeight:"900"}}>SUIVANT</button>}
+            <button onClick={props.onMenu} style={{background:"#191919",border:"2px solid #2a2a2a",color:"#777",padding:"10px 16px",borderRadius:"10px",cursor:"pointer",letterSpacing:"2px",fontSize:"10px",fontFamily:"monospace"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#444";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#2a2a2a";}}>MENU</button>
+          </div>
+        </div>
+      )}
+      <style>{"@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}"}</style>
+    </div>
+  );
+}
+
+
+// ── LOCAL 1V1 SETUP ───────────────────────────────────────────────────────────
+function Local1v1Setup(props){
+  var t=TR[props.lang||"fr"];
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  var p1NameS=useState("JOUEUR 1");var p1Name=p1NameS[0];var setP1Name=p1NameS[1];
+  var p2NameS=useState("JOUEUR 2");var p2Name=p2NameS[0];var setP2Name=p2NameS[1];
+  var sizeS=useState(12);var gridSize=sizeS[0];var setGridSize=sizeS[1];
+  var timerS=useState(30);var timerSecs=timerS[0];var setTimerSecs=timerS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+  var sizes=[{v:8,l:t.small+" 8x8"},{v:12,l:t.medium+" 12x12"},{v:16,l:t.large+" 16x16"}];
+  var timers=[{v:15,l:"15s"},{v:30,l:"30s"},{v:45,l:"45s"},{v:999,l:"Infini"}];
+  var p1Color="#00E5FF";var p2Color="#FF3366";
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",padding:"24px 16px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"400px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{fontSize:"22px",fontWeight:"900",letterSpacing:"5px",background:"linear-gradient(90deg,#00E5FF,#BF5FFF)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:"6px"}}>1v1 LOCAL</div>
+        <div style={{fontSize:"11px",color:"#333",letterSpacing:"2px",marginBottom:"32px"}}>Deux joueurs, un seul ecran</div>
+
+        <div style={{display:"flex",gap:"12px",width:"100%",marginBottom:"24px"}}>
+          {[[p1Name,setP1Name,p1Color,"JOUEUR 1"],[p2Name,setP2Name,p2Color,"JOUEUR 2"]].map(function(arr,i){
+            var name=arr[0];var setName=arr[1];var col=arr[2];var ph=arr[3];
+            return (
+              <div key={i} style={{flex:1,background:"#111",border:"2px solid "+col+"44",borderRadius:"14px",padding:"14px",display:"flex",flexDirection:"column",alignItems:"center",gap:"8px"}}>
+                <div style={{width:"28px",height:"28px",borderRadius:"50%",background:col,boxShadow:"0 0 10px "+col+"66"}}/>
+                <input value={name} onChange={function(e){setName(e.target.value.slice(0,10).toUpperCase());}} maxLength={10} style={{background:"transparent",border:"none",borderBottom:"2px solid "+col+"55",color:col,fontFamily:"monospace",fontSize:"13px",fontWeight:"900",letterSpacing:"2px",textAlign:"center",width:"100%",outline:"none",padding:"4px 0"}} placeholder={ph}/>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{width:"100%",marginBottom:"20px"}}>
+          <div style={{fontSize:"10px",color:"#444",letterSpacing:"3px",marginBottom:"10px"}}>TAILLE DE GRILLE</div>
+          <div style={{display:"flex",gap:"8px"}}>
+            {sizes.map(function(s){var isSel=gridSize===s.v;return(
+              <button key={s.v} onClick={function(){setGridSize(s.v);}} style={{flex:1,padding:"12px 0",borderRadius:"10px",cursor:"pointer",background:isSel?"#00E5FF22":"#111",border:"2px solid "+(isSel?"#00E5FF":"#1e1e1e"),color:isSel?"#00E5FF":"#555",fontFamily:"monospace",fontSize:"12px",fontWeight:isSel?"900":"400",transition:"all 0.2s"}}>{s.l}</button>
+            );})}
+          </div>
+        </div>
+
+        <div style={{width:"100%",marginBottom:"28px"}}>
+          <div style={{fontSize:"10px",color:"#444",letterSpacing:"3px",marginBottom:"10px"}}>TIMER PAR TOUR</div>
+          <div style={{display:"flex",gap:"8px"}}>
+            {timers.map(function(tm){var isSel=timerSecs===tm.v;return(
+              <button key={tm.v} onClick={function(){setTimerSecs(tm.v);}} style={{flex:1,padding:"12px 0",borderRadius:"10px",cursor:"pointer",background:isSel?"#BF5FFF22":"#111",border:"2px solid "+(isSel?"#BF5FFF":"#1e1e1e"),color:isSel?"#BF5FFF":"#555",fontFamily:"monospace",fontSize:"12px",fontWeight:isSel?"900":"400",transition:"all 0.2s"}}>{tm.l}</button>
+            );})}
+          </div>
+        </div>
+
+        <button onClick={function(){props.onStart({p1Name:p1Name||"J1",p2Name:p2Name||"J2",gridSize:gridSize,timerSecs:timerSecs});}} style={{width:"100%",padding:"16px",borderRadius:"14px",cursor:"pointer",background:"linear-gradient(135deg,#00E5FF,#BF5FFF)",border:"none",color:"white",fontFamily:"monospace",fontSize:"14px",fontWeight:"900",letterSpacing:"4px",boxShadow:"0 0 20px #00E5FF44",marginBottom:"4px"}}>
+          LANCER LA PARTIE
+        </button>
+        <button onClick={props.onBack} style={{background:"transparent",border:"none",color:"#2e2e2e",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",fontFamily:"monospace",padding:"8px",marginTop:"16px"}}>{"< " + t.back}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── LOCAL 1V1 GAME ────────────────────────────────────────────────────────────
+function Local1v1Game(props){
+  var t=TR[props.lang||"fr"];
+  var cfg=props.cfg;
+  var size=cfg.gridSize;
+  var timerMax=cfg.timerSecs;
+  var skinShape=SKINS[props.activeSkin].shape;
+  var P1_COLOR="#00E5FF"; var P2_COLOR="#FF3366";
+
+  var gridS=useState(function(){return mkGrid(size);});var grid=gridS[0];var setGrid=gridS[1];
+  var p1TS=useState(function(){return new Set(["0,0"]);});var p1T=p1TS[0];var setP1T=p1TS[1];
+  var p2TS=useState(function(){return new Set([(size-1)+","+(size-1)]);});var p2T=p2TS[0];var setP2T=p2TS[1];
+  var p1CS=useState(0);var p1Color=p1CS[0];var setP1Color=p1CS[1];
+  var p2CS=useState(COLORS.length-1);var p2Color=p2CS[0];var setP2Color=p2CS[1];
+  var turnS=useState(1);var turn=turnS[0];var setTurn=turnS[1];
+  var movesS=useState(0);var moves=movesS[0];var setMoves=movesS[1];
+  var goS=useState(false);var gameOver=goS[0];var setGameOver=goS[1];
+  var winnerS=useState(null);var winner=winnerS[0];var setWinner=winnerS[1];
+  var passS=useState(false);var showPass=passS[0];var setShowPass=passS[1];
+  var timeS=useState(timerMax);var timeLeft=timeS[0];var setTimeLeft=timeS[1];
+  var timerRef=useRef(null);
+  var adjRef=useRef(null);
+
+  var initGame=useCallback(function(){
+    var g=mkGrid(size);
+    setGrid(g);setP1T(new Set(["0,0"]));setP2T(new Set([(size-1)+","+(size-1)]));
+    setP1Color(g[0][0]);setP2Color(g[size-1][size-1]);
+    setTurn(1);setMoves(0);setGameOver(false);setWinner(null);setShowPass(false);setTimeLeft(timerMax);
+  },[size,timerMax]);
+
+  var checkWin=useCallback(function(t1,t2){
+    var total=size*size;
+    if(t1.size+t2.size>=total||t1.size>total/2||t2.size>total/2){
+      var w=t1.size>t2.size?1:t2.size>t1.size?2:0;
+      var pct=Math.round((t1.size/total)*100);
+      setWinner(w);setGameOver(true);
+      if(props.onGameEnd){props.onGameEnd({won:w===1,pct:pct,moves:moves});}
+      return true;
+    }
+    return false;
+  },[size,props.onGameEnd,moves]);
+
+  // Timer
+  useEffect(function(){
+    if(showPass||gameOver||timerMax===999){if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}return;}
+    setTimeLeft(timerMax);
+    timerRef.current=setInterval(function(){setTimeLeft(function(t){return t-1;});},1000);
+    return function(){if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}};
+  },[turn,showPass,gameOver,timerMax]);
+
+  // Auto move on timer expire
+  useEffect(function(){
+    if(timeLeft<=0&&!gameOver&&!showPass){
+      var curT=turn===1?p1T:p2T;var curC=turn===1?p1Color:p2Color;
+      var adj2=adjColors(grid,curT,size);var arr=[];
+      adj2.forEach(function(ci){if(ci!==curC)arr.push(ci);});
+      if(arr.length>0)handleColorPick(arr[Math.floor(Math.random()*arr.length)]);
+    }
+  },[timeLeft]);
+
+  function handleColorPick(ci){
+    if(gameOver||showPass)return;
+    var curT=turn===1?p1T:p2T;
+    var curC=turn===1?p1Color:p2Color;
+    if(ci===curC)return;
+    if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}
+    var ng=paint(grid,curT,ci);
+    var nT=flood(ng,curT,ci,size);
+    setGrid(ng);
+    if(turn===1){setP1T(nT);setP1Color(ci);if(!checkWin(nT,p2T)){setShowPass(true);setTurn(2);setMoves(function(m){return m+1;});}}
+    else{setP2T(nT);setP2Color(ci);if(!checkWin(p1T,nT)){setShowPass(true);setTurn(1);setMoves(function(m){return m+1;});}}
+  }
+
+  var total=size*size;
+  var p1Pct=Math.round((p1T.size/total)*100);
+  var p2Pct=Math.round((p2T.size/total)*100);
+  var curColor=turn===1?p1Color:p2Color;
+  var curT=turn===1?p1T:p2T;
+  var adj=adjColors(grid,curT,size);
+  var cellPx=Math.min(Math.floor(340/size),30);
+  var timerPct=timerMax===999?100:(timeLeft/timerMax)*100;
+  var timerColor=timerPct>60?"#ADFF2F":timerPct>30?"#FF9500":"#FF3366";
+  var curName=turn===1?cfg.p1Name:cfg.p2Name;
+  var curCol=turn===1?P1_COLOR:P2_COLOR;
+  var winnerName=winner===1?cfg.p1Name:winner===2?cfg.p2Name:t.draw;
+  var winnerColor=winner===1?P1_COLOR:winner===2?P2_COLOR:"#FFE600";
+
+  // Pass the phone screen
+  if(showPass&&!gameOver){
+    var nextName=turn===1?cfg.p1Name:cfg.p2Name;
+    var nextCol=turn===1?P1_COLOR:P2_COLOR;
+    return (
+      <div style={{minHeight:"100vh",background:"#03030a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",padding:"32px",textAlign:"center"}}>
+        <div style={{fontSize:"48px",marginBottom:"24px"}}>📱</div>
+        <div style={{fontSize:"11px",color:"#333",letterSpacing:"3px",marginBottom:"12px"}}>PASSE LE TELEPHONE A</div>
+        <div style={{fontSize:"32px",fontWeight:"900",letterSpacing:"4px",color:nextCol,marginBottom:"8px",textShadow:"0 0 20px "+nextCol+"77"}}>{nextName}</div>
+        <div style={{fontSize:"11px",color:"#2a2a2a",letterSpacing:"2px",marginBottom:"48px"}}>C'est ton tour !</div>
+        <div style={{display:"flex",gap:"8px",marginBottom:"40px"}}>
+          {[0,1,2].map(function(i){return(<div key={i} style={{width:"8px",height:"8px",borderRadius:"50%",background:nextCol,animation:"blink 1s ease-in-out "+(i*0.3)+"s infinite alternate"}}/>);})}
+        </div>
+        <button onClick={function(){setShowPass(false);setTimeLeft(timerMax);}} style={{background:"linear-gradient(135deg,"+nextCol+",#BF5FFF)",border:"none",color:"white",padding:"18px 52px",borderRadius:"16px",cursor:"pointer",letterSpacing:"4px",fontSize:"15px",fontWeight:"900",fontFamily:"monospace",boxShadow:"0 0 24px "+nextCol+"55"}}>
+          JE SUIS PRET !
+        </button>
+        <style>{"@keyframes blink{0%{opacity:.2}100%{opacity:1}}"}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"10px 8px 20px",userSelect:"none"}}>
+      <div style={{display:"flex",alignItems:"center",width:"100%",maxWidth:"420px",marginBottom:"8px",gap:"8px"}}>
+        <button onClick={props.onMenu} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#383838",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace",flexShrink:0}}>{"< " + t.menu}</button>
+        <div style={{flex:1,textAlign:"center"}}><span style={{fontSize:"12px",fontWeight:"900",letterSpacing:"3px",background:"linear-gradient(90deg,#00E5FF,#BF5FFF)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>1v1 LOCAL</span></div>
+        <div style={{fontSize:"9px",color:"#333",letterSpacing:"1px"}}>{"#"+moves}</div>
+      </div>
+
+      {timerMax!==999&&(
+        <div style={{width:"100%",maxWidth:"420px",height:"6px",background:"#111",borderRadius:"3px",marginBottom:"8px",overflow:"hidden",position:"relative"}}>
+          <div style={{height:"100%",width:timerPct+"%",background:timerColor,borderRadius:"3px",transition:"width 1s linear, background 0.5s"}}/>
+          <div style={{position:"absolute",right:"6px",top:"-1px",fontSize:"10px",color:timerColor,fontWeight:"900"}}>{timeLeft+"s"}</div>
+        </div>
+      )}
+
+      <div style={{display:"flex",width:"100%",maxWidth:"420px",marginBottom:"8px",gap:"8px",alignItems:"center"}}>
+        <div style={{flex:1,background:"#0f0f0f",border:"2px solid "+(turn===1?P1_COLOR:P1_COLOR+"44"),borderRadius:"12px",padding:"8px 12px",boxShadow:turn===1?("0 0 14px "+P1_COLOR+"55"):"none",transition:"all 0.3s"}}>
+          <div style={{fontSize:"9px",color:turn===1?P1_COLOR:"#444",letterSpacing:"1px",fontWeight:"900"}}>{cfg.p1Name}{turn===1?" ◄":""}</div>
+          <div style={{fontSize:"20px",fontWeight:"900",color:COLORS[p1Color]}}>{p1Pct+"%"}</div>
+          <div style={{fontSize:"10px",color:"#383838"}}>{p1T.size+" cases"}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"4px",minWidth:"36px"}}>
+          <div style={{width:"8px",height:"8px",borderRadius:"50%",background:curCol,boxShadow:"0 0 8px "+curCol,animation:"blink2 0.9s infinite"}}/>
+          <div style={{fontSize:"7px",color:"#333",textAlign:"center"}}>{gameOver?t.end:"VS"}</div>
+        </div>
+        <div style={{flex:1,background:"#0f0f0f",border:"2px solid "+(turn===2?P2_COLOR:P2_COLOR+"44"),borderRadius:"12px",padding:"8px 12px",textAlign:"right",boxShadow:turn===2?("0 0 14px "+P2_COLOR+"55"):"none",transition:"all 0.3s"}}>
+          <div style={{fontSize:"9px",color:turn===2?P2_COLOR:"#444",letterSpacing:"1px",fontWeight:"900"}}>{turn===2?" ►":""}{cfg.p2Name}</div>
+          <div style={{fontSize:"20px",fontWeight:"900",color:COLORS[p2Color]}}>{p2Pct+"%"}</div>
+          <div style={{fontSize:"10px",color:"#383838"}}>{p2T.size+" cases"}</div>
+        </div>
+      </div>
+
+      <div style={{width:"100%",maxWidth:"420px",height:"4px",background:"#111",borderRadius:"3px",marginBottom:"8px",overflow:"hidden",display:"flex"}}>
+        <div style={{width:p1Pct+"%",background:P1_COLOR,transition:"width 0.35s"}}/>
+        <div style={{flex:1}}/>
+        <div style={{width:p2Pct+"%",background:P2_COLOR,transition:"width 0.35s"}}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+size+","+cellPx+"px)",gap:"2px",marginBottom:"10px",padding:"6px",background:"#0f0f0f",borderRadius:"12px",border:"1px solid #181818"}}>
+        {grid.map(function(row,r){return row.map(function(_,c){
+          var k=r+","+c;var isP1=p1T.has(k);var isP2=p2T.has(k);
+          var outlineColor=isP1?"rgba(0,229,255,0.85)":isP2?"rgba(255,51,102,0.85)":"none";
+          return(<div key={k} style={{width:cellPx+"px",height:cellPx+"px",borderRadius:skinShape==="circle"?"50%":skinShape==="soft"?"30%":skinShape==="gem"?"40% 60% 40% 60%":"2px",backgroundColor:COLORS[grid[r][c]],outline:(isP1||isP2)?("2.5px solid "+outlineColor):"none",transform:(isP1||isP2)?"scale(1.05)":"scale(1)",transition:"background-color 0.25s,transform 0.15s",position:"relative",zIndex:(isP1||isP2)?2:1,boxShadow:skinShape==="neon"?("0 0 5px "+COLORS[grid[r][c]]):"none"}}/>);
+        });})}</div>
+
+      <div style={{fontSize:"11px",color:curCol,letterSpacing:"2px",fontWeight:"900",marginBottom:"8px"}}>{curName+" - TON TOUR"}</div>
+
+      <div style={{display:"flex",gap:"8px",marginBottom:"8px",flexWrap:"wrap",justifyContent:"center",maxWidth:"420px"}}>
+        {COLORS.map(function(color,idx){
+          var isAdj=adj.has(idx);var isCur=idx===curColor;var dis=isCur||gameOver;
+          return(<button key={idx} onClick={function(){handleColorPick(idx);}} disabled={dis} style={{width:"50px",height:"50px",borderRadius:skinShape==="circle"?"50%":skinShape==="gem"?"40% 60% 40% 60%":"12px",background:color,border:isCur?"3px solid white":isAdj?"3px solid rgba(255,255,255,0.6)":"3px solid transparent",cursor:dis?"not-allowed":"pointer",opacity:isCur?0.3:(!isAdj&&!gameOver)?0.25:1,transform:(isAdj&&!isCur&&!gameOver)?"scale(1.13)":"scale(1)",transition:"all 0.18s",boxShadow:(isAdj&&!isCur&&!gameOver)?("0 0 14px "+color+"99"):"none",fontSize:"14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {isCur?"*":""}
+          </button>);
+        })}
+      </div>
+
+      {gameOver&&(
+        <div style={{background:"#0a0a0a",border:"2px solid "+winnerColor,borderRadius:"18px",padding:"24px 28px",textAlign:"center",boxShadow:"0 0 30px "+winnerColor+"44",marginTop:"10px",width:"100%",maxWidth:"340px"}}>
+          <div style={{fontSize:"36px",marginBottom:"8px"}}>{winner===0?"🤝":"🏆"}</div>
+          <div style={{fontSize:"11px",color:"#444",letterSpacing:"3px",marginBottom:"6px"}}>{winner===0?"":t.winner}</div>
+          <div style={{fontSize:"26px",fontWeight:"900",letterSpacing:"3px",color:winnerColor,marginBottom:"8px"}}>{winnerName}</div>
+          <div style={{display:"flex",justifyContent:"center",gap:"20px",marginBottom:"16px"}}>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:"20px",fontWeight:"900",color:P1_COLOR}}>{p1Pct+"%"}</div>
+              <div style={{fontSize:"9px",color:"#444"}}>{cfg.p1Name}</div>
+            </div>
+            <div style={{fontSize:"20px",color:"#333",alignSelf:"center"}}>vs</div>
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:"20px",fontWeight:"900",color:P2_COLOR}}>{p2Pct+"%"}</div>
+              <div style={{fontSize:"9px",color:"#444"}}>{cfg.p2Name}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:"8px",justifyContent:"center"}}>
+            <button onClick={initGame} style={{background:"#191919",border:"2px solid #2a2a2a",color:"#777",padding:"10px 16px",borderRadius:"10px",cursor:"pointer",letterSpacing:"2px",fontSize:"10px",fontFamily:"monospace"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#444";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#2a2a2a";}}>REJOUER</button>
+            <button onClick={props.onMenu} style={{background:"#191919",border:"2px solid #2a2a2a",color:"#777",padding:"10px 16px",borderRadius:"10px",cursor:"pointer",letterSpacing:"2px",fontSize:"10px",fontFamily:"monospace"}} onMouseOver={function(e){e.currentTarget.style.borderColor="#444";}} onMouseOut={function(e){e.currentTarget.style.borderColor="#2a2a2a";}}>MENU</button>
+          </div>
+        </div>
+      )}
+      <style>{"@keyframes blink2{0%,100%{opacity:1}50%{opacity:.15}}"}</style>
+    </div>
+  );
+}
+
+
+// ── TROPHY SCREEN ─────────────────────────────────────────────────────────────
+function TrophyScreen(props){
+  var t=TR[props.lang||"fr"];
+  var stats=props.stats;
+  var trophies=stats.trophies;
+  var allDone=trophies.every(function(v){return v;});
+  var count=trophies.filter(Boolean).length;
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  var newUnlockS=useState(null);var newUnlock=newUnlockS[0];var setNewUnlock=newUnlockS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},60);return function(){clearTimeout(id);};});
+
+  // Check secret skin unlock
+  useEffect(function(){
+    if(allDone&&props.activeSkin!==6){props.onSecretSkin();setNewUnlock(true);setTimeout(function(){setNewUnlock(false);},4000);}
+  },[allDone]);
+
+  var icons={"MAP":"[MAP]","STAR":"[*]","CTRL":"[>>]","HOME":"[H]","SKULL":"[X]","SKIN":"[S]","BOLT":"[!]","LAND":"[%]","FIRE":"[F]","CROWN":"[C]","FAST":"[<<]","ACE":"[A]"};
+
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"16px 12px 32px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease",width:"100%",maxWidth:"420px"}}>
+
+        <div style={{display:"flex",alignItems:"center",marginBottom:"8px",gap:"8px"}}>
+          <button onClick={props.onBack} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#444",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace"}}>{"<"}</button>
+          <div style={{flex:1,textAlign:"center",fontSize:"18px",fontWeight:"900",letterSpacing:"4px",background:"linear-gradient(90deg,#FFE600,#FF9500)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>TROPHEES</div>
+          <div style={{background:"#FFE60022",border:"1px solid #FFE60055",color:"#FFE600",padding:"5px 10px",borderRadius:"8px",fontSize:"11px",fontWeight:"900"}}>{count+"/12"}</div>
+        </div>
+
+        <div style={{width:"100%",height:"4px",background:"#111",borderRadius:"2px",marginBottom:"16px",overflow:"hidden"}}>
+          <div style={{height:"100%",width:Math.round(count/12*100)+"%",background:"linear-gradient(90deg,#FFE600,#FF9500)",transition:"width 0.5s",borderRadius:"2px"}}/>
+        </div>
+
+        {newUnlock&&(
+          <div style={{background:"linear-gradient(135deg,#1a0030,#0d001a)",border:"2px solid #BF5FFF",borderRadius:"14px",padding:"16px",marginBottom:"16px",textAlign:"center",boxShadow:"0 0 30px #BF5FFF66",animation:"glowPulse 1s ease-in-out infinite alternate"}}>
+            <div style={{fontSize:"11px",color:"#BF5FFF",letterSpacing:"3px",marginBottom:"6px"}}>SKIN SECRET DEBLOQUE !</div>
+            <div style={{fontSize:"22px",fontWeight:"900",color:"#fff",letterSpacing:"3px",marginBottom:"4px"}}>PIXEL</div>
+            <div style={{display:"flex",justifyContent:"center",gap:"2px",marginTop:"8px"}}>
+              {["#FF3366","#00E5FF","#ADFF2F","#FF9500","#BF5FFF","#FFE600"].map(function(c,i){return(<div key={i} style={{width:"14px",height:"14px",background:c,boxShadow:"inset 0 0 0 2px rgba(0,0,0,0.6), inset 2px 2px 0 rgba(255,255,255,0.25)"}}/>);})}
+            </div>
+          </div>
+        )}
+
+        {allDone&&!newUnlock&&(
+          <div style={{background:"#BF5FFF11",border:"1px solid #BF5FFF44",borderRadius:"12px",padding:"12px",marginBottom:"14px",textAlign:"center"}}>
+            <div style={{fontSize:"9px",color:"#BF5FFF",letterSpacing:"2px",marginBottom:"4px"}}>SKIN SECRET DEBLOQUE</div>
+            <div style={{fontSize:"16px",fontWeight:"900",color:"#BF5FFF",letterSpacing:"2px"}}>PIXEL [ACTIF DANS SKINS]</div>
+          </div>
+        )}
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+          {TROPHIES.map(function(tr){
+            var done=trophies[tr.id];
+            return (
+              <div key={tr.id} style={{background:done?"#0f0f0f":"#090909",border:"2px solid "+(done?tr.color+"66":"#111"),borderRadius:"12px",padding:"12px 10px",transition:"all 0.2s",boxShadow:done?("0 0 10px "+tr.color+"22"):"none",opacity:done?1:0.55,position:"relative",overflow:"hidden"}}>
+                {done&&<div style={{position:"absolute",top:0,right:0,width:"0",height:"0",borderStyle:"solid",borderWidth:"0 24px 24px 0",borderColor:"transparent "+tr.color+" transparent transparent"}}/>}
+                <div style={{fontSize:"11px",fontWeight:"900",color:done?tr.color:"#333",letterSpacing:"1px",marginBottom:"2px"}}>{icons[tr.icon]||"[?]"}</div>
+                <div style={{fontSize:"10px",fontWeight:"900",color:done?tr.color:"#333",letterSpacing:"1px",marginBottom:"4px"}}>{tr.name}</div>
+                <div style={{fontSize:"9px",color:done?"#555":"#2a2a2a",lineHeight:"1.4"}}>{tr.desc}</div>
+                {done&&<div style={{fontSize:"8px",color:tr.color,marginTop:"6px",letterSpacing:"1px"}}>OBTENU</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{textAlign:"center",marginTop:"20px",fontSize:"10px",color:"#222",letterSpacing:"2px"}}>
+          {count<12?t.trophyProgress:t.trophyAll}
+        </div>
+      </div>
+      <style>{"@keyframes glowPulse{0%{box-shadow:0 0 20px #BF5FFF44}100%{box-shadow:0 0 40px #BF5FFF99}}"}</style>
+    </div>
+  );
+}
+
+
+// ── STATS SCREEN ──────────────────────────────────────────────────────────────
+function StatBar(props){
+  var pct=props.max>0?Math.min(100,Math.round((props.val/props.max)*100)):0;
+  return (
+    <div style={{marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"5px"}}>
+        <span style={{fontSize:"10px",color:"#555",letterSpacing:"2px"}}>{props.label}</span>
+        <span style={{fontSize:"12px",fontWeight:"900",color:props.color||"#fff"}}>{props.display||props.val}</span>
+      </div>
+      <div style={{height:"5px",background:"#111",borderRadius:"3px",overflow:"hidden"}}>
+        <div style={{height:"100%",width:pct+"%",background:props.color||"#fff",borderRadius:"3px",transition:"width 0.8s ease"}}/>
+      </div>
+    </div>
+  );
+}
+
+function StatsScreen(props){
+  var t=TR[props.lang||"fr"];
+  var s=props.stats;
+  var animS=useState(false);var anim=animS[0];var setAnim=animS[1];
+  useEffect(function(){var id=setTimeout(function(){setAnim(true);},80);return function(){clearTimeout(id);};});
+
+  var totalWins=(s.freeWins||0)+(s.campaignWins||0)+(s.localWins||0);
+  var totalGames=s.totalGames||0;
+  var winRate=totalGames>0?Math.round((totalWins/totalGames)*100):0;
+  var avgMoves=totalGames>0?Math.round((s.totalMoves||0)/totalGames):0;
+  var campaignPct=props.progress?Math.round(props.progress.completed.filter(Boolean).length/10*100):0;
+  var trophyCount=(s.trophies||[]).filter(Boolean).length;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"monospace",padding:"16px 12px 40px"}}>
+      <div style={{opacity:anim?1:0,transform:anim?"translateY(0)":"translateY(20px)",transition:"all 0.55s ease",width:"100%",maxWidth:"420px"}}>
+
+        <div style={{display:"flex",alignItems:"center",marginBottom:"20px",gap:"8px"}}>
+          <button onClick={props.onBack} style={{background:"transparent",border:"1px solid #1e1e1e",color:"#444",padding:"6px 10px",borderRadius:"8px",cursor:"pointer",fontSize:"10px",fontFamily:"monospace"}}>{"<"}</button>
+          <div style={{flex:1,textAlign:"center",fontSize:"18px",fontWeight:"900",letterSpacing:"4px",background:"linear-gradient(90deg,#00E5FF,#ADFF2F)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>STATISTIQUES</div>
+        </div>
+
+        {/* Global overview cards */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"8px",marginBottom:"20px"}}>
+          {[
+            {label:"PARTIES",val:totalGames,color:"#BF5FFF"},
+            {label:"VICTOIRES",val:totalWins,color:"#ADFF2F"},
+            {label:"WIN RATE",val:winRate+"%",color:"#FFE600"},
+          ].map(function(card,i){return(
+            <div key={i} style={{background:"#0f0f0f",border:"1px solid #1a1a1a",borderRadius:"12px",padding:"12px 8px",textAlign:"center"}}>
+              <div style={{fontSize:"22px",fontWeight:"900",color:card.color,marginBottom:"4px"}}>{card.val}</div>
+              <div style={{fontSize:"8px",color:"#3a3a3a",letterSpacing:"2px"}}>{card.label}</div>
+            </div>
+          );})}
+        </div>
+
+        {/* Par mode */}
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:"14px",padding:"16px 18px",marginBottom:"14px"}}>
+          <div style={{fontSize:"10px",color:"#333",letterSpacing:"3px",marginBottom:"14px"}}>PAR MODE</div>
+          <StatBar label="MODE LIBRE" val={s.freeWins||0} max={s.freeGames||1} color="#BF5FFF" display={(s.freeWins||0)+"W / "+(s.freeLosses||0)+"L ("+(s.freeGames||0)+" parties)"}/>
+          <StatBar label="CAMPAGNE" val={s.campaignWins||0} max={s.campaignGames||1} color="#FF9500" display={(s.campaignWins||0)+" victoires / "+(s.campaignGames||0)+" parties"}/>
+          <StatBar label="1v1 LOCAL" val={s.localWins||0} max={s.localGames||1} color="#00E5FF" display={(s.localWins||0)+"W / "+((s.localGames||0)-(s.localWins||0))+"L ("+(s.localGames||0)+" parties)"}/>
+        </div>
+
+        {/* Records */}
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:"14px",padding:"16px 18px",marginBottom:"14px"}}>
+          <div style={{fontSize:"10px",color:"#333",letterSpacing:"3px",marginBottom:"14px"}}>RECORDS</div>
+          <StatBar label="MEILLEUR TERRITOIRE" val={s.bestPct||0} max={100} color="#ADFF2F" display={(s.bestPct||0)+"%"}/>
+          <StatBar label="PARTIE LA + COURTE" val={s.bestMoves===999?0:(100-Math.min(100,s.bestMoves||100))} max={100} color="#FFE600" display={s.bestMoves===999?"---":(s.bestMoves||0)+" coups"}/>
+          <StatBar label="SERIE MODE LIBRE" val={s.bestFreeStreak||0} max={Math.max(5,s.bestFreeStreak||0)} color="#FF3366" display={(s.bestFreeStreak||0)+" de suite"}/>
+          <StatBar label="SERIE EXTREME" val={s.bestExtremeStreak||0} max={Math.max(5,s.bestExtremeStreak||0)} color="#FF3366" display={(s.bestExtremeStreak||0)+" de suite"}/>
+          <StatBar label="VICTOIRES EXTREME" val={s.extremeWins||0} max={Math.max(10,s.extremeWins||0)} color="#FF3366" display={(s.extremeWins||0)+" victoires"}/>
+        </div>
+
+        {/* Progression */}
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:"14px",padding:"16px 18px",marginBottom:"14px"}}>
+          <div style={{fontSize:"10px",color:"#333",letterSpacing:"3px",marginBottom:"14px"}}>PROGRESSION</div>
+          <StatBar label="CAMPAGNE" val={campaignPct} max={100} color="#FF9500" display={campaignPct+"%  ("+props.progress.completed.filter(Boolean).length+"/10 niveaux)"}/>
+          <StatBar label="TROPHEES" val={trophyCount} max={12} color="#FFE600" display={trophyCount+"/12"}/>
+          <StatBar label="SKINS DEBLOQUES" val={props.progress.completed.filter(Boolean).length>=10?7:Math.min(6,props.progress.completed.filter(Boolean).length)} max={7} color="#BF5FFF" display={props.progress.completed.filter(Boolean).length>=10?"7/7 (PIXEL inclus)":Math.min(6,props.progress.completed.filter(Boolean).length)+"/7"}/>
+        </div>
+
+        {/* Misc */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"20px"}}>
+          {[
+            {label:"COUPS JOUES",val:s.totalMoves||0,color:"#555"},
+            {label:"MOY. PAR PARTIE",val:avgMoves||"---",color:"#555"},
+          ].map(function(c,i){return(
+            <div key={i} style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:"12px",padding:"12px",textAlign:"center"}}>
+              <div style={{fontSize:"20px",fontWeight:"900",color:c.color,marginBottom:"4px"}}>{c.val}</div>
+              <div style={{fontSize:"8px",color:"#2a2a2a",letterSpacing:"2px"}}>{c.label}</div>
+            </div>
+          );})}
+        </div>
+
+        {totalGames===0&&(
+          <div style={{textAlign:"center",color:"#222",fontSize:"11px",letterSpacing:"2px",padding:"20px"}}>
+            Jouez des parties pour voir vos statistiques !
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────────
+var DEFAULT_PROGRESS={completed:Array(10).fill(false),bestScores:Array(10).fill(0)};
+var DEFAULT_SETTINGS={lang:"fr",music:false,volume:60};
+var INIT_STATS={freeGames:0,freeWins:0,freeLosses:0,campaignGames:0,campaignWins:0,localGames:0,localWins:0,extremeWins:0,extremeStreak:0,bestExtremeStreak:0,freeStreak:0,bestFreeStreak:0,totalMoves:0,totalGames:0,bestPct:0,bestMoves:999,trophies:Array(12).fill(false),eclair:false,dominator:false,localDominator:false,speedrun:false};
+
+export default function App(){
+  var screenS=useState("menu");var screen=screenS[0];var setScreen=screenS[1];
+  var local1v1CfgS=useState(null);var local1v1Cfg=local1v1CfgS[0];var setLocal1v1Cfg=local1v1CfgS[1];
+  var gridOptS=useState(null);var gridOpt=gridOptS[0];var setGridOpt=gridOptS[1];
+  var diffOptS=useState(null);var diffOpt=diffOptS[0];var setDiffOpt=diffOptS[1];
+  var campaignLvlS=useState(null);var campaignLvl=campaignLvlS[0];var setCampaignLvl=campaignLvlS[1];
+  var settingsS=useState(DEFAULT_SETTINGS);var settings=settingsS[0];var setSettings=settingsS[1];
+  var lang=settings.lang||"fr";
+  var progressS=useState(DEFAULT_PROGRESS);var progress=progressS[0];var setProgress=progressS[1];
+  var skinS=useState(0);var activeSkin=skinS[0];var setActiveSkin=skinS[1];
+  var statsS=useState(INIT_STATS);var stats=statsS[0];var setStats=statsS[1];
+  var loadedS=useState(false);var loaded=loadedS[0];var setLoaded=loadedS[1];
+
+  // Load saved data on mount
+  useEffect(function(){
+    async function load(){
+      try {
+        var r1=await window.storage.get("ct-progress");
+        if(r1&&r1.value){var p=JSON.parse(r1.value);setProgress(p);}
+      } catch(e){}
+      try {
+        var r2=await window.storage.get("ct-settings");
+        if(r2&&r2.value){var s=JSON.parse(r2.value);setSettings(s);}
+      } catch(e){}
+      try {
+        var r3=await window.storage.get("ct-skin");
+        if(r3&&r3.value){setActiveSkin(parseInt(r3.value));}
+      } catch(e){}
+      try {
+        var r4=await window.storage.get("ct-stats");
+        if(r4&&r4.value){var st=JSON.parse(r4.value);setStats(Object.assign({},INIT_STATS,st));}
+      } catch(e){}
+      setLoaded(true);
+    }
+    load();
+  },[]);
+
+  // Save progress whenever it changes
+  useEffect(function(){
+    if(!loaded)return;
+    try{window.storage.set("ct-progress",JSON.stringify(progress));}catch(e){}
+  },[progress,loaded]);
+
+  // Save settings whenever they change
+  useEffect(function(){
+    if(!loaded)return;
+    try{window.storage.set("ct-settings",JSON.stringify(settings));}catch(e){}
+  },[settings,loaded]);
+
+  // Save skin whenever it changes
+  useEffect(function(){
+    if(!loaded)return;
+    try{window.storage.set("ct-skin",String(activeSkin));}catch(e){}
+  },[activeSkin,loaded]);
+
+  // Save stats whenever they change
+  useEffect(function(){
+    if(!loaded)return;
+    try{window.storage.set("ct-stats",JSON.stringify(stats));}catch(e){}
+  },[stats,loaded]);
+
+  var skinRewardAt={1:1,3:2,6:3,8:4,10:5};
+
+  function handleLevelWin(lvNum,pPct){
+    var n=lvNum-1;
+    var stars=calcStars(pPct);
+    var skinId=skinRewardAt[lvNum];
+    setProgress(function(prev){
+      var nc=prev.completed.slice();nc[n]=stars>0;
+      var nb=prev.bestScores.slice();if(pPct>nb[n])nb[n]=pPct;
+      return {completed:nc,bestScores:nb};
+    });
+    if(skinId){setActiveSkin(skinId);}
+  }
+
+  // Update stats + trophies after any game
+  function handleGameEnd(opts){
+    setStats(function(prev){
+      var s=Object.assign({},prev);
+      s.trophies=s.trophies.slice();
+      s.totalGames=(s.totalGames||0)+1;
+      s.totalMoves=(s.totalMoves||0)+(opts.moves||0);
+      if(opts.won&&opts.pct>=(s.bestPct||0)){s.bestPct=opts.pct;}
+      if(opts.won&&opts.moves>0&&opts.moves<(s.bestMoves||999)){s.bestMoves=opts.moves;}
+      if(opts.mode==="free"){
+        s.freeGames=(s.freeGames||0)+1;
+        if(opts.won){s.freeWins=(s.freeWins||0)+1;s.freeStreak=(s.freeStreak||0)+1;}
+        else{s.freeLosses=(s.freeLosses||0)+1;s.freeStreak=0;}
+        if(s.freeStreak>(s.bestFreeStreak||0)){s.bestFreeStreak=s.freeStreak;}
+        if(opts.won&&opts.moves<15){s.eclair=true;}
+        if(opts.won&&opts.pct>=80){s.dominator=true;}
+        if(opts.diffKey==="extreme"||opts.diffKey==="xtr"){
+          if(opts.won){s.extremeWins=(s.extremeWins||0)+1;s.extremeStreak=(s.extremeStreak||0)+1;}
+          else{s.extremeStreak=0;}
+          if(s.extremeStreak>(s.bestExtremeStreak||0)){s.bestExtremeStreak=s.extremeStreak;}
+        }
+      }
+      if(opts.mode==="campaign"){
+        s.campaignGames=(s.campaignGames||0)+1;
+        if(opts.won){
+          s.campaignWins=(s.campaignWins||0)+1;
+          if(opts.moves<15){s.eclair=true;}
+          if(opts.pct>=80){s.dominator=true;}
+          if(opts.timeRemaining&&opts.timeRemaining>=30){s.speedrun=true;}
+          if(opts.diffKey==="xtr"||opts.diffKey==="extreme"){
+            s.extremeWins=(s.extremeWins||0)+1;s.extremeStreak=(s.extremeStreak||0)+1;
+          } else {s.extremeStreak=0;}
+          if(s.extremeStreak>(s.bestExtremeStreak||0)){s.bestExtremeStreak=s.extremeStreak;}
+        }
+      }
+      if(opts.mode==="local"){
+        s.localGames=(s.localGames||0)+1;
+        if(opts.won){s.localWins=(s.localWins||0)+1;}
+        if(opts.won&&opts.pct>=80){s.localDominator=true;}
+      }
+      s.trophies=checkTrophies(s,progress);
+      return s;
+    });
+  }
+
+  // Loading screen
+
+  if(!loaded){
+    return (
+      <div style={{minHeight:"100vh",background:"#07070f",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace"}}>
+        <div style={{display:"flex",gap:"8px",marginBottom:"20px"}}>
+          {COLORS.map(function(c,i){return(<div key={i} style={{width:"12px",height:"12px",borderRadius:"3px",background:c,animation:"blink 0.8s ease-in-out "+(i*0.12)+"s infinite alternate"}}/>);})}
+        </div>
+        <div style={{color:"#333",fontSize:"11px",letterSpacing:"3px"}}>{settings.lang==="en"?"LOADING...":"CHARGEMENT..."}</div>
+        <style>{"@keyframes blink{0%{opacity:.2}100%{opacity:1}}"}</style>
+      </div>
+    );
+  }
+
+  if(screen==="menu")return <MenuScreen lang={lang} onCampaign={function(){setScreen("campaign");}} onLocal={function(){setScreen("local1v1setup");}} onFreePlay={function(){setScreen("grid");}} onSettings={function(){setScreen("settings");}} onTrophies={function(){setScreen("trophies");}} onStats={function(){setScreen("stats");}}/>;
+  if(screen==="settings")return <SettingsScreen lang={lang} settings={settings} onChange={function(s){setSettings(s);}} onBack={function(){setScreen("menu");}}/>;
+  if(screen==="campaign")return <CampaignScreen lang={lang} progress={progress} onPlay={function(lv){setCampaignLvl(lv);setScreen("game-campaign");}} onBack={function(){setScreen("menu");}} onSkins={function(){setScreen("skins");}}/>;
+  if(screen==="skins")return <SkinScreen lang={lang} progress={progress} activeSkin={activeSkin} onSelect={function(id){setActiveSkin(id);}} onBack={function(){setScreen("campaign");}}/>;
+  if(screen==="stats")return <StatsScreen lang={lang} stats={stats} progress={progress} onBack={function(){setScreen("menu");}}/>;
+  if(screen==="trophies")return <TrophyScreen lang={lang} stats={stats} progress={progress} activeSkin={activeSkin} onSecretSkin={function(){setActiveSkin(6);}} onBack={function(){setScreen("menu");}}/>;
+  if(screen==="grid")return <GridSelectScreen lang={lang} onSelect={function(opt){setGridOpt(opt);setScreen("diff");}} onBack={function(){setScreen("menu");}}/>;
+  if(screen==="diff")return <DiffSelectScreen lang={lang} onSelect={function(d){setDiffOpt(d);setScreen("game-free");}} onBack={function(){setScreen("grid");}}/>;
+
+  if(screen==="game-free"&&gridOpt&&diffOpt){
+    return <GameScreen
+      lang={lang} size={gridOpt.size} diffKey={diffOpt.dk} timerSecs={30} activeSkin={activeSkin}
+      isCampaign={false} levelNum={null} skinReward={null} nextLevel={null}
+      onMenu={function(){setScreen("menu");}} onNextLevel={null}
+      onGameEnd={function(opts){handleGameEnd(Object.assign({mode:"free"},opts));}}
+    />;
+  }
+
+  if(screen==="game-campaign"&&campaignLvl){
+    var lvIdx=campaignLvl.n-1;
+    var nextLv=campaignLvl.n<10?LEVELS[lvIdx+1]:null;
+    var skinRew=skinRewardAt[campaignLvl.n]||null;
+    return <GameScreen
+      key={"lvl"+campaignLvl.n}
+      lang={lang} size={campaignLvl.size} diffKey={campaignLvl.dk} timerSecs={campaignLvl.timer} activeSkin={activeSkin}
+      isCampaign={true} levelNum={campaignLvl.n} skinReward={skinRew} nextLevel={nextLv}
+      onMenu={function(){setScreen("campaign");}}
+      onNextLevel={function(){if(nextLv){setCampaignLvl(nextLv);}}}
+      onLevelWin={handleLevelWin}
+      onGameEnd={function(opts){handleGameEnd(Object.assign({mode:"campaign",diffKey:campaignLvl.dk},opts));}}
+    />;
+  }
+
+  if(screen==="local1v1setup")return <Local1v1Setup lang={lang} onStart={function(cfg){setLocal1v1Cfg(cfg);setScreen("local1v1game");}} onBack={function(){setScreen("menu");}}/>;
+  if(screen==="local1v1game"&&local1v1Cfg)return <Local1v1Game key={JSON.stringify(local1v1Cfg)} lang={lang} cfg={local1v1Cfg} activeSkin={activeSkin} onMenu={function(){setScreen("menu");}} onGameEnd={function(opts){handleGameEnd(Object.assign({mode:"local"},opts));}}/>;
+  return <MenuScreen onCampaign={function(){setScreen("campaign");}} onLocal={function(){setScreen("local1v1setup");}} onFreePlay={function(){setScreen("grid");}} onSettings={function(){setScreen("settings");}} onTrophies={function(){setScreen("trophies");}} onStats={function(){setScreen("stats");}}/>;
+}
