@@ -13,46 +13,81 @@
     html,body{width:100%;height:100%;background:#07070f;overflow:hidden;
       -webkit-tap-highlight-color:transparent;touch-action:manipulation}
     #root{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
-    #loading{position:fixed;inset:0;background:#07070f;display:flex;align-items:center;
-      justify-content:center;color:#333;font-family:monospace;font-size:11px;
-      letter-spacing:3px;z-index:9999;transition:opacity 0.5s}
+    #loading{position:fixed;inset:0;background:#07070f;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;z-index:9999;transition:opacity 0.5s}
+    .ld-title{color:#fff;font-family:monospace;font-size:22px;font-weight:900;
+      letter-spacing:6px;margin-bottom:24px;
+      background:linear-gradient(90deg,#FF3366,#00E5FF,#ADFF2F,#FF9500,#BF5FFF,#FFE600);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .ld-bar-wrap{width:180px;height:4px;background:#111;border-radius:2px;overflow:hidden}
+    .ld-bar{height:100%;width:0%;background:linear-gradient(90deg,#00E5FF,#BF5FFF);
+      border-radius:2px;transition:width 0.3s}
+    .ld-msg{color:#333;font-family:monospace;font-size:10px;letter-spacing:3px;margin-top:16px}
+    #err{display:none;color:#FF3366;font-family:monospace;font-size:11px;
+      text-align:center;padding:20px;letter-spacing:2px}
   </style>
 </head>
 <body>
-  <div id="loading">CHARGEMENT...</div>
+  <div id="loading">
+    <div class="ld-title">COLOR TAKEOVER</div>
+    <div class="ld-bar-wrap"><div class="ld-bar" id="bar"></div></div>
+    <div class="ld-msg" id="ld-msg">CHARGEMENT...</div>
+    <div id="err"></div>
+  </div>
   <div id="root"></div>
 
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
   <script>
-  // Sucrase: fast JSX transform (no full babel needed)
-  // Load sucrase then compile and run
-  var s = document.createElement('script');
-  s.src = 'https://unpkg.com/sucrase@3.35.0/dist/sucrase.js';
-  s.onload = function() {
-    try {
-      var code = document.getElementById('game-src').textContent;
-      var compiled = sucrase.transform(code, {transforms:['jsx']}).code;
-      var fn = new Function(compiled);
-      fn();
-      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-      var ld = document.getElementById('loading');
-      ld.style.opacity = '0';
-      setTimeout(function(){ld.style.display='none';}, 500);
-    } catch(e) {
-      document.getElementById('loading').textContent = 'ERREUR: ' + e.message;
-      console.error(e);
-    }
-  };
-  s.onerror = function() {
-    document.getElementById('loading').textContent = 'Erreur de chargement';
-  };
-  document.head.appendChild(s);
+  function setBar(pct,msg){
+    document.getElementById('bar').style.width=pct+'%';
+    document.getElementById('ld-msg').textContent=msg;
+  }
+  function showErr(msg){
+    document.getElementById('err').style.display='block';
+    document.getElementById('err').textContent=msg;
+    document.getElementById('ld-msg').textContent='';
+  }
+  function hideLd(){
+    var ld=document.getElementById('loading');
+    ld.style.opacity='0';
+    setTimeout(function(){ld.style.display='none';},500);
+  }
+  window.onerror=function(m,s,l,c){showErr('Erreur: '+m.substring(0,60));return false;};
+  setBar(10,'REACT...');
   </script>
 
-  <script id="game-src" type="text/plain">
+  <!-- React -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"
+    onload="setBar(40,'REACT DOM...')"
+    onerror="showErr('Impossible de charger React')"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"
+    onload="setBar(60,'BABEL...')"
+    onerror="showErr('Impossible de charger ReactDOM')"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"
+    onload="setBar(80,'COMPILATION...');runGame();"
+    onerror="showErr('Impossible de charger Babel')"></script>
+
+  <script>
+  function runGame(){
+    try {
+      var src = document.getElementById('gamesrc').textContent;
+      setBar(90,'COMPILATION JSX...');
+      var compiled = Babel.transform(src, {presets:['react']}).code;
+      setBar(95,'LANCEMENT...');
+      var fn = new Function('React','ReactDOM', compiled + '\nreturn App;');
+      var App = fn(React, ReactDOM);
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+      setBar(100,'OK!');
+      setTimeout(hideLd, 300);
+    } catch(e) {
+      showErr('Erreur compilation: ' + e.message.substring(0,80));
+      console.error(e);
+    }
+  }
+  </script>
+
+  <script id="gamesrc" type="text/plain">
 var useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
+
 
 var COLORS = ["#FF3366","#00E5FF","#ADFF2F","#FF9500","#BF5FFF","#FFE600"];
 
