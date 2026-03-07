@@ -6,25 +6,53 @@
   <meta name="theme-color" content="#07070f"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>Color Takeover</title>
   <link rel="manifest" href="manifest.json"/>
   <style>
-    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    html, body { width:100%; height:100%; background:#07070f; overflow:hidden;
-      -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
-    #root { width:100%; height:100%; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;background:#07070f;overflow:hidden;
+      -webkit-tap-highlight-color:transparent;touch-action:manipulation}
+    #root{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    #loading{position:fixed;inset:0;background:#07070f;display:flex;align-items:center;
+      justify-content:center;color:#333;font-family:monospace;font-size:11px;
+      letter-spacing:3px;z-index:9999;transition:opacity 0.5s}
   </style>
 </head>
 <body>
-  <div id="root">
-    <div style="color:#333;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;font-size:11px;letter-spacing:3px;">CHARGEMENT...</div>
-  </div>
+  <div id="loading">CHARGEMENT...</div>
+  <div id="root"></div>
 
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="text/babel" data-presets="react,env">
+
+  <script>
+  // Sucrase: fast JSX transform (no full babel needed)
+  // Load sucrase then compile and run
+  var s = document.createElement('script');
+  s.src = 'https://unpkg.com/sucrase@3.35.0/dist/sucrase.js';
+  s.onload = function() {
+    try {
+      var code = document.getElementById('game-src').textContent;
+      var compiled = sucrase.transform(code, {transforms:['jsx']}).code;
+      var fn = new Function(compiled);
+      fn();
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+      var ld = document.getElementById('loading');
+      ld.style.opacity = '0';
+      setTimeout(function(){ld.style.display='none';}, 500);
+    } catch(e) {
+      document.getElementById('loading').textContent = 'ERREUR: ' + e.message;
+      console.error(e);
+    }
+  };
+  s.onerror = function() {
+    document.getElementById('loading').textContent = 'Erreur de chargement';
+  };
+  document.head.appendChild(s);
+  </script>
+
+  <script id="game-src" type="text/plain">
+var useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
 
 var COLORS = ["#FF3366","#00E5FF","#ADFF2F","#FF9500","#BF5FFF","#FFE600"];
 
@@ -1238,8 +1266,6 @@ function App(){
   return <MenuScreen onCampaign={function(){setScreen("campaign");}} onLocal={function(){setScreen("local1v1setup");}} onFreePlay={function(){setScreen("grid");}} onSettings={function(){setScreen("settings");}} onTrophies={function(){setScreen("trophies");}} onStats={function(){setScreen("stats");}}/>;
 }
 
-
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
   </script>
 
   <script>
