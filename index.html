@@ -24,7 +24,7 @@
       border-radius:2px;transition:width 0.3s}
     .ld-msg{color:#333;font-family:monospace;font-size:10px;letter-spacing:3px;margin-top:16px}
     #err{display:none;color:#FF3366;font-family:monospace;font-size:11px;
-      text-align:center;padding:20px;letter-spacing:2px}
+      text-align:center;padding:20px;letter-spacing:2px;max-width:320px}
   </style>
 </head>
 <body>
@@ -51,22 +51,8 @@
     ld.style.opacity='0';
     setTimeout(function(){ld.style.display='none';},500);
   }
-  window.onerror=function(m,s,l,c){showErr('Erreur: '+m.substring(0,60));return false;};
-  setBar(10,'REACT...');
-  </script>
 
-  <!-- React -->
-  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"
-    onload="setBar(40,'REACT DOM...')"
-    onerror="showErr('Impossible de charger React')"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"
-    onload="setBar(60,'BABEL...')"
-    onerror="showErr('Impossible de charger ReactDOM')"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"
-    onload="setBar(80,'COMPILATION...');runGame();"
-    onerror="showErr('Impossible de charger Babel')"></script>
-
-  <script>
+  // Define runGame BEFORE loading Babel
   function runGame(){
     try {
       var src = document.getElementById('gamesrc').textContent;
@@ -77,13 +63,31 @@
       var App = fn(React, ReactDOM);
       ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
       setBar(100,'OK!');
-      setTimeout(hideLd, 300);
+      setTimeout(hideLd, 400);
     } catch(e) {
-      showErr('Erreur compilation: ' + e.message.substring(0,80));
+      showErr('Erreur: ' + e.message.substring(0,100));
       console.error(e);
     }
   }
+
+  window.onerror=function(m,s,l,c){
+    if(m && m.indexOf('runGame')===-1) showErr('Erreur: '+m.substring(0,80));
+    return false;
+  };
+  setBar(10,'REACT...');
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"
+    onload="setBar(40,'REACT DOM...')"
+    onerror="showErr('Erreur: React introuvable')"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"
+    onload="setBar(60,'BABEL...')"
+    onerror="showErr('Erreur: ReactDOM introuvable')"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.0/babel.min.js"
+    onload="setBar(80,'COMPILATION...');runGame();"
+    onerror="showErr('Erreur: Babel introuvable')"></script>
 
   <script id="gamesrc" type="text/plain">
 var useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
