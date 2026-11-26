@@ -64,6 +64,7 @@ _à définir_
 | Date | Décision | Statut |
 |---|---|---|
 | 2026-11-26 | Création de la bible et des règles de collaboration | Acté |
+| 2026-11-26 | Écriture à deux. L'auteur dirige : il fixe la direction, l'assistant rédige ensuite si on le lui demande. Dernier mot à l'auteur. | Acté |
 
 ---
 
@@ -71,6 +72,7 @@ _à définir_
 
 - [ ] Genre, ton, public, références (cadre vide)
 - [ ] Format de l'œuvre
+- [ ] Dépôt privé dédié à l'écriture (à créer par l'auteur)
 - [ ] Lien éventuel avec le jeu Color Takeover (même univers ou projet indépendant ?)
 
 ---
@@ -81,5 +83,5 @@ _à définir_
 2. Toute critique s'accompagne d'au moins une alternative concrète.
 3. La bible fait loi. Toute contradiction est signalée en citant la décision.
 4. L'auteur dirige, l'assistant conteste. Une seule insistance, puis « choix d'auteur ».
-5. L'auteur rédige. L'assistant n'écrit de passages que sur demande explicite.
+5. On écrit à deux, l'auteur dirige. L'assistant n'écrit de passages que sur demande explicite, et une fois la direction posée par l'auteur.
 6. « Tu deviens complaisant » → retour immédiat à une posture critique stricte.
